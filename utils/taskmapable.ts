@@ -218,9 +218,6 @@ export function dailyNoteTaskParser(dailyNoteFormat: string = TasksUtil.innerDat
                     let dailyNoteDate;
                     // 首先尝试使用完整路径解析日期（处理带路径的格式）
                     const fullPath = itemValue.path.replace(/\\/g, '/'); // 统一路径分隔符
-                    console.log('Daily Note Format:', dailyNoteFormat);
-                    console.log('Daily Note Folder:', dailyNoteFolder);
-                    console.log('Full Path:', fullPath);
                     
                     // 处理 Daily Note Folder 前缀
                     let pathToParse = fullPath;
@@ -230,23 +227,23 @@ export function dailyNoteTaskParser(dailyNoteFormat: string = TasksUtil.innerDat
                         // 如果路径以 Daily Note Folder 开头，移除这个前缀
                         if (pathToParse.startsWith(normalizedFolder + '/')) {
                             pathToParse = pathToParse.substring((normalizedFolder + '/').length);
-                            console.log('Path after removing folder prefix:', pathToParse);
                         }
                     }
                     
+                    // 移除 .md 后缀
+                    if (pathToParse.endsWith('.md')) {
+                        pathToParse = pathToParse.substring(0, pathToParse.length - 3);
+                    }
+                    
                     dailyNoteDate = moment(pathToParse, dailyNoteFormat, true);
-                    console.log('Full Path Parsing Result:', dailyNoteDate.isValid() ? dailyNoteDate.format('YYYY-MM-DD') : 'Invalid');
                     
                     // 如果完整路径解析失败，再尝试使用文件名解析
                     if (!dailyNoteDate.isValid()) {
                         const taskFile: string = getFileTitle(itemValue.path);
-                        console.log('File Title:', taskFile);
                         dailyNoteDate = moment(taskFile, dailyNoteFormat, true);
-                        console.log('File Title Parsing Result:', dailyNoteDate.isValid() ? dailyNoteDate.format('YYYY-MM-DD') : 'Invalid');
                     }
                     
                     itemValue.dailyNote = dailyNoteDate.isValid();
-                    console.log('Final Daily Note Date:', dailyNoteDate.isValid() ? dailyNoteDate.format('YYYY-MM-DD') : 'Invalid');
                     if (!itemValue.dailyNote) {
                         resolve(itemValue);
                         return;
@@ -254,14 +251,10 @@ export function dailyNoteTaskParser(dailyNoteFormat: string = TasksUtil.innerDat
                     if (!itemValue.start) itemValue.start = dailyNoteDate;
                     if (!itemValue.scheduled) itemValue.scheduled = dailyNoteDate;
                     if (!itemValue.created) itemValue.created = dailyNoteDate;
-                    console.log('Task Start Date:', itemValue.start ? itemValue.start.format('YYYY-MM-DD') : 'Not set');
 
                     resolve(itemValue);
                 })
-                .catch((error) => {
-                    console.error('Error in dailyNoteTaskParser:', error);
-                    reject(error);
-                });
+                .catch(() => reject());
         })
     }
 }
