@@ -139,7 +139,9 @@ export class TasksTimelineView extends BaseTasksView {
         const stautsOrder = this.userOptionModel.get("taskStatusOrder");
 
         const dailyNoteFormatParser = TaskMapable.dailyNoteTaskParser(
-            this.userOptionModel.get("dailyNoteFormat"));
+            this.userOptionModel.get("dailyNoteFormat"),
+            this.userOptionModel.get("dailyNoteFolder"));
+
 
         const forward = this.userOptionModel.get("forward");
         /**

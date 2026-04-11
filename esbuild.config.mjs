@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import fs from "fs";
+import path from "path";
 
 const banner =
 `/*
@@ -10,6 +12,12 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
+const outDir = "dist";
+
+// Create dist directory if it doesn't exist
+if (!fs.existsSync(outDir)) {
+	fs.mkdirSync(outDir, { recursive: true });
+}
 
 const context = await esbuild.context({
 	banner: {
@@ -36,11 +44,48 @@ const context = await esbuild.context({
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
-	outfile: "ExampleVault/.obsidian/plugins/tasks-view/main.js",
+	outfile: path.join(outDir, "main.js"),
 });
 
 if (prod) {
-	await context.rebuild();
+	// Use build() instead of context.rebuild() to ensure files are generated immediately
+	await esbuild.build({
+		banner: {
+			js: banner,
+		},
+		entryPoints: ["src/main.ts"],
+		bundle: true,
+		external: [
+			"obsidian",
+			"@codemirror/autocomplete",
+			"@codemirror/collab",
+			"@codemirror/commands",
+			"@codemirror/language",
+			"@codemirror/lint",
+			"@codemirror/search",
+			"@codemirror/state",
+			"@codemirror/view",
+			"@lezer/common",
+			"@lezer/highlight",
+			"@lezer/lr",
+			...builtins],
+		format: "cjs",
+		target: "es2018",
+		logLevel: "info",
+		sourcemap: false,
+		treeShaking: true,
+		outfile: path.join(outDir, "main.js"),
+	});
+	
+	// Copy manifest.json and styles.css to dist directory
+	if (fs.existsSync("manifest.json")) {
+		fs.copyFileSync("manifest.json", path.join(outDir, "manifest.json"));
+	}
+	if (fs.existsSync("styles.css")) {
+		fs.copyFileSync("styles.css", path.join(outDir, "styles.css"));
+	}
+	
+	console.log(`Build completed successfully! Files are in ${outDir} directory.`);
 	process.exit(0);
 } else {
 	await context.watch();
