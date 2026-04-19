@@ -179,6 +179,14 @@ export const defaultUserOptions = {
      * Convert a 24 hour time prefix in task description (15:30) to 12 hour time with am/pm (3:30 pm)
      */
 	convert24HourTimePrefix: false as boolean,
+	/**
+	 * Use Templater plugin to create files with templates
+	 */
+	useTemplater: false as boolean,
+	/**
+	 * Templater template file path to use when creating new files
+	 */
+	templaterTemplateFile: '' as string,
 };
 export type UserOption = typeof defaultUserOptions;
 
@@ -532,12 +540,31 @@ export class TasksCalendarSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName("Convert Time Prefix")
             .setDesc("Convert 24 hour time prefix to 12 hour time with am/pm. \n\
-			    For example, 15:30 at the beginning of a task will become 3:30 pm.\n\
-			    This is applied after sorting, enabling a chronological ordering.")
+		    For example, 15:30 at the beginning of a task will become 3:30 pm.\n\
+		    This is applied after sorting, enabling a chronological ordering.")
             .addToggle(async tg => {
                 tg.setValue(this.plugin.userOptions.convert24HourTimePrefix);
                 tg.onChange(async v => await this.onOptionUpdate({ convert24HourTimePrefix: v }));
             })
+
+        new Setting(containerEl)
+            .setName("Use Templater Plugin")
+            .setDesc("Use Templater plugin to create files with templates when creating new task files.")
+            .addToggle(async tg => {
+                tg.setValue(this.plugin.userOptions.useTemplater);
+                tg.onChange(async v => await this.onOptionUpdate({ useTemplater: v }, true));
+            })
+
+        if (this.plugin.userOptions.useTemplater) {
+            new Setting(containerEl)
+                .setName("Templater Template File")
+                .setDesc("Select a template file from your vault to use when creating new task files.")
+                .addText(t => {
+                    t.setValue(this.plugin.userOptions.templaterTemplateFile);
+                    t.setPlaceholder("Path to template file, e.g., templates/task.md");
+                    t.onChange(async v => await this.onOptionUpdate({ templaterTemplateFile: v.trim() }));
+                })
+        }
 
         new Setting(containerEl)
             .setName("Use Include Tags")
