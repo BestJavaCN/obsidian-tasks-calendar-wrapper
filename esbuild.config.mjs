@@ -12,7 +12,7 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
-const outDir = "dist";
+const outDir = "E:\\ObsidianVaultDev\\.obsidian\\plugins\\tasks-calendar-wrapper";
 
 // Create dist directory if it doesn't exist
 if (!fs.existsSync(outDir)) {
