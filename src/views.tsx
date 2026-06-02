@@ -52,29 +52,7 @@ export class TasksTimelineView extends BaseTasksView {
             <ObsidianBridge plugin={this} userOptionModel={this.userOptionModel} taskListModel={this.taskListModel} />
         );
 
-        await this.waitForMetadataCache();
         await this.onReloadTasks();
-    }
-
-    private async waitForMetadataCache(maxWaitMs: number = 5000): Promise<void> {
-        const files = this.app.vault.getMarkdownFiles();
-        if (files.length === 0) return;
-
-        const allCached = files.every(file => this.app.metadataCache.getFileCache(file) !== null);
-        if (allCached) return;
-
-        const startTime = Date.now();
-        return new Promise(resolve => {
-            const checkCache = () => {
-                const nowAllCached = files.every(file => this.app.metadataCache.getFileCache(file) !== null);
-                if (nowAllCached || Date.now() - startTime > maxWaitMs) {
-                    resolve();
-                } else {
-                    setTimeout(checkCache, 100);
-                }
-            };
-            checkCache();
-        });
     }
 
     async onClose(): Promise<void> {

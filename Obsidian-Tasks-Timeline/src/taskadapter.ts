@@ -78,6 +78,7 @@ export class ObsidianTaskAdapter {
             const link = Link.file(file.path);
             try {
                 const content = await this.app.vault.cachedRead(file);
+                await this.waitForFileCache(file);
                 const cache = this.app.metadataCache.getFileCache(file);
                 cache?.listItems?.forEach(
                     this.fromItemCache(link, file.path, content, cache.sections, cache.links, cache.frontmatter, cache.tags)
@@ -86,6 +87,22 @@ export class ObsidianTaskAdapter {
                 console.error("Read file from obsidian cache failed: " + reason);
             }
         }));
+    }
+
+    private async waitForFileCache(file: TFile, timeoutMs: number = 5000): Promise<void> {
+        if (this.app.metadataCache.getFileCache(file) !== null) return;
+
+        const startTime = Date.now();
+        return new Promise(resolve => {
+            const check = () => {
+                if (this.app.metadataCache.getFileCache(file) !== null || Date.now() - startTime > timeoutMs) {
+                    resolve();
+                } else {
+                    setTimeout(check, 50);
+                }
+            };
+            check();
+        });
     }
 
     /**
