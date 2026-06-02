@@ -3,6 +3,7 @@ import { Plugin } from 'obsidian';
 import { TasksTimelineView, TIMELINE_VIEW } from './views';
 
 import { defaultUserOptions, TasksCalendarSettingTab, UserOption } from './settings';
+import { t } from "./i18n";
 // Remember to rename these classes and interfaces!
 
 
@@ -29,7 +30,7 @@ export default class TasksCalendarWrapper extends Plugin {
 
 		this.addCommand({
 			id: 'open-tasks-timeline-view',
-			name: 'Open Tasks Timeline View',
+			name: t(this.userOptions.language).openTasksTimelineView,
 			callback: () => {
 				this.activateView(TIMELINE_VIEW);
 			}

@@ -6,6 +6,7 @@ import { createRoot, Root } from 'react-dom/client';
 import * as TaskMapable from 'utils/taskmapable';
 import { TaskDataModel, TaskStatus, TaskStatusMarkerMap } from "utils/tasks";
 import { defaultUserOptions, UserOption } from "./settings";
+import { t } from "./i18n";
 
 
 export const CALENDAR_VIEW = "tasks_calendar_view";
@@ -87,9 +88,9 @@ export class TasksTimelineView extends BaseTasksView {
                     })*/
                     this.taskListModel.set({ taskList: tasks });
                     this.userOptionModel.set({ taskFiles: taskfiles || [] });
-                }).catch(reason => { new Notice("Error when parsing task items: " + reason, 5000); throw reason; });
+                }).catch(reason => { new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorParsingTasks + reason, 5000); throw reason; });
             })
-            .catch(reason => { new Notice("Error when generating tasks from files: " + reason, 5000); throw reason; })
+            .catch(reason => { new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000); throw reason; })
             .finally(() => this.isReloading = false);
     }
 
@@ -222,7 +223,7 @@ export class TasksTimelineView extends BaseTasksView {
     }
 
     getDisplayText(): string {
-        return "Tasks Timeline";
+        return t(this.userOptionModel.get("language") || "en").tasksTimeline;
     }
 
     getIcon(): string {

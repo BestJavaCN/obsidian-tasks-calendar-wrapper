@@ -18,6 +18,7 @@ export const UserOptionContext = React.createContext({
     hideTags: [] as string[],
     forward: false as boolean,
     useBuiltinStyle: true as boolean,
+    language: "en" as string,
 });
 
 export const QuickEntryHandlerContext = React.createContext({

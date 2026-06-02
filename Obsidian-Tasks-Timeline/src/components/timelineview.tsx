@@ -1,6 +1,7 @@
 import moment, { Moment } from 'moment';
 import * as React from 'react';
 import { UserOption } from '../../../src/settings';
+import { t } from '../../../src/i18n';
 import * as TaskMapable from '../../../utils/taskmapable';
 import { innerDateFormat, TaskDataModel, TaskStatus } from '../../../utils/tasks';
 import { TaskListContext, TodayFocusEventHandlersContext, UserOptionContext } from './context';
@@ -130,25 +131,26 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                         select: this.props.userOptions.inbox,
                         forward: this.props.userOptions.forward,
                         useBuiltinStyle: this.props.userOptions.useBuiltinStyle,
+                        language: this.props.userOptions.language,
                         counters: [
                             {
                                 onClick: () => { this.handleCounterFilterClick('todoFilter') },
                                 cnt: todoCount,
-                                label: "Todo",
+                                label: t(this.props.userOptions.language).todo,
                                 id: "todo",
-                                ariaLabel: "Todo Tasks"
+                                ariaLabel: t(this.props.userOptions.language).todoTasks
                             }, {
                                 onClick: () => { this.handleCounterFilterClick('overdueFilter') },
                                 cnt: overdueCount,
                                 id: "overdue",
-                                label: "Overdue",
-                                ariaLabel: "Overdue Tasks"
+                                label: t(this.props.userOptions.language).overdue,
+                                ariaLabel: t(this.props.userOptions.language).overdueTasks
                             }, {
                                 onClick: () => { this.handleCounterFilterClick('unplannedFilter') },
                                 cnt: unplannedCount,
                                 id: "unplanned",
-                                label: "Unplanned",
-                                ariaLabel: "Unplanned Tasks"
+                                label: t(this.props.userOptions.language).unplanned,
+                                ariaLabel: t(this.props.userOptions.language).unplannedTasks
                             }
                         ]
                     }}>

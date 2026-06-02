@@ -4,6 +4,7 @@ import * as React from "react";
 import { getFileTitle } from "../../../dataview-util/dataview";
 import { TasksTimelineView } from "../../../src/views";
 import { TaskDataModel, recurrenceSymbol } from "../../../utils/tasks";
+import { t } from "../../../src/i18n";
 import * as Icons from './asserts/icons';
 import { TaskItemEventHandlersContext, UserOptionContext } from "./context";
 
@@ -60,58 +61,63 @@ export class TaskItemView extends React.Component<TaskItemProps, TaskItemState> 
                     };
                     return (
                         <UserOptionContext.Consumer>{
-                            ({ dateFormat, hideTags, useBuiltinStyle }) =>
-                            (<div data-line={line} data-task={item.statusMarker} data-col={col} data-link={link} data-dailynote={isDailyNote}
-                                className={`task ${item.status}`}
-                                style={{ "--task-color": color || "var(--text-muted)" } as React.CSSProperties} aria-label={ariaLabel}>
-                                <StripWithIcon onToggle={onToggleTask} useBuiltinStyle={useBuiltinStyle}
-                                    marker={item.statusMarker} status={item.status} />
-                                <div className='lines' onClick={openTaskFile}>
-                                    <div className="content">
-                                        <Content display={display} fileName={item.path} />
-                                    </div>
-                                    <div className='line info'>
-                                        {callbacks.handleModifyTask &&
-                                            <ModifyBadge onClick={onModifyTask}></ModifyBadge>}
-                                        {item.created &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='relative' ariaLabel={"create at " + item.created.format(dateFormat)}
-                                                label={getRelative(item.created)} icon={Icons.taskIcon} />}
-                                        {item.start &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='relative' ariaLabel={"start at " + item.start.format(dateFormat)}
-                                                label={getRelative(item.start)} icon={Icons.startIcon} />}
-                                        {item.scheduled &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='relative' ariaLabel={"scheduled to " + item.scheduled.format(dateFormat)}
-                                                label={getRelative(item.scheduled)} icon={Icons.scheduledIcon} />}
-                                        {item.due &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='relative' ariaLabel={"due at " + item.due.format(dateFormat)}
-                                                label={getRelative(item.due)} icon={Icons.dueIcon} />}
-                                        {item.completion &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='relative' ariaLabel={"complete at " + item.completion.format(dateFormat)}
-                                                label={getRelative(item.completion)} icon={Icons.doneIcon} />}
+                            ({ dateFormat, hideTags, useBuiltinStyle, language }) => {
+                                const tr = t((language || "en") as "en" | "zh");
+                                return (
+                                    <div data-line={line} data-task={item.statusMarker} data-col={col} data-link={link} data-dailynote={isDailyNote}
+                                        className={`task ${item.status}`}
+                                        style={{ "--task-color": color || "var(--text-muted)" } as React.CSSProperties} aria-label={ariaLabel}>
+                                        <StripWithIcon onToggle={onToggleTask} useBuiltinStyle={useBuiltinStyle}
+                                            marker={item.statusMarker} status={item.status} />
+                                        <div className='lines' onClick={openTaskFile}>
+                                            <div className="content">
+                                                <Content display={display} fileName={item.path} />
+                                            </div>
+                                            <div className='line info'>
+                                                {callbacks.handleModifyTask &&
+                                                    <ModifyBadge onClick={onModifyTask} ariaLabel={tr.modifyTask}></ModifyBadge>}
+                                                {item.created &&
+                                                    <DateStatusBadge
+                                                        className='relative' ariaLabel={tr.createAt + " " + item.created.format(dateFormat)}
+                                                        label={getRelative(item.created)} icon={Icons.taskIcon} />}
+                                                {item.start &&
+                                                    <DateStatusBadge
+                                                        className='relative' ariaLabel={tr.startAt + " " + item.start.format(dateFormat)}
+                                                        label={getRelative(item.start)} icon={Icons.startIcon} />}
+                                                {item.scheduled &&
+                                                    <DateStatusBadge
+                                                        className='relative' ariaLabel={tr.scheduledTo + " " + item.scheduled.format(dateFormat)}
+                                                        label={getRelative(item.scheduled)} icon={Icons.scheduledIcon} />}
+                                                {item.due &&
+                                                    <DateStatusBadge
+                                                        className='relative' ariaLabel={tr.dueAt + " " + item.due.format(dateFormat)}
+                                                        label={getRelative(item.due)} icon={Icons.dueIcon} />}
+                                                {item.completion &&
+                                                    <DateStatusBadge
+                                                        className='relative' ariaLabel={tr.completeAt + " " + item.completion.format(dateFormat)}
+                                                        label={getRelative(item.completion)} icon={Icons.doneIcon} />}
 
-                                        {item.recurrence &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='repeat' ariaLabel={'recurrent: ' + item.recurrence.replace(recurrenceSymbol, '')}
-                                                label={item.recurrence.replace(recurrenceSymbol, '')} icon={Icons.repeatIcon} />}
+                                                {item.recurrence &&
+                                                    <DateStatusBadge
+                                                        className='repeat' ariaLabel={tr.recurrent + ": " + item.recurrence.replace(recurrenceSymbol, '')}
+                                                        label={item.recurrence.replace(recurrenceSymbol, '')} icon={Icons.repeatIcon} />}
 
-                                        {item.priority &&
-                                            <DateStatusBadge //onClick={openTaskFile}
-                                                className='priority' ariaLabel={'priority: ' + item.priority}
-                                                label={item.priority.length > 0 ? item.priority + " Priority" : "No Priority"}
-                                                icon={Icons.priorityIcon} />}
-                                        <FileBadge filePath={item.path} subPath={item.section.subpath || ""} />
-                                        {[...new Set(tags)].filter(t => !hideTags.includes(t)).map((t, i) => {
-                                            return < TagBadge tag={t} key={i} />
-                                        }
-                                        )}
+                                                {item.priority &&
+                                                    <DateStatusBadge
+                                                        className='priority' ariaLabel={tr.priority + ": " + item.priority}
+                                                        label={item.priority.length > 0 ? item.priority + " " + tr.priorityLabel : tr.noPriority}
+                                                        icon={Icons.priorityIcon} />}
+                                                <FileBadge filePath={item.path} subPath={item.section.subpath || ""} />
+                                                {[...new Set(tags)].filter(t => !hideTags.includes(t)).map((t, i) => {
+                                                    return < TagBadge tag={t} key={i} />
+                                                }
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                            </div>)}
+                                );
+                            }
+                        }
                         </UserOptionContext.Consumer>
                     )
                 }}
@@ -253,13 +259,14 @@ class DateStatusBadge extends React.Component<BadgeProps> {
 }
 
 const defaultModifyBadgeProps = {
-    onClick: () => { }
+    onClick: () => { },
+    ariaLabel: "Modify Task" as string,
 };
 type ModifyBadgeProps = Readonly<typeof defaultModifyBadgeProps>;
 class ModifyBadge extends React.Component<ModifyBadgeProps> {
     render(): React.ReactNode {
         return (
-            <a aria-label="Modify Task" onClick={this.props.onClick}>✏️</a>
+            <a aria-label={this.props.ariaLabel} onClick={this.props.onClick}>✏️</a>
         )
     }
 }

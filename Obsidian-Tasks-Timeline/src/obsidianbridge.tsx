@@ -3,6 +3,7 @@ import moment from 'moment';
 import { App, ItemView, Modal, Notice, Pos } from 'obsidian';
 import * as React from 'react';
 import { UserOption, defaultUserOptions } from '../../src/settings';
+import { t, Language, formatNoSuchFile, formatErrorOpeningFile, formatSomethingWentWrong, formatTemplateFileNotFound, formatErrorCreatingFileTemplater, formatErrorCreatingFile, formatErrorWritingTask, formatErrorReadingFile } from '../../src/i18n';
 import * as TaskMapable from '../../utils/taskmapable';
 import { TaskDataModel } from '../../utils/tasks';
 import { QuickEntryHandlerContext, TaskItemEventHandlersContext } from './components/context';
@@ -14,24 +15,27 @@ class CreateFileModal extends Modal {
     private taskStr: string;
     private onConfirm: () => void;
     private onCancel: () => void;
+    private lang: Language;
 
-    constructor(app: App, path: string, section: string, taskStr: string, onConfirm: () => void, onCancel: () => void) {
+    constructor(app: App, lang: Language, path: string, section: string, taskStr: string, onConfirm: () => void, onCancel: () => void) {
         super(app);
         this.path = path;
         this.section = section;
         this.taskStr = taskStr;
         this.onConfirm = onConfirm;
         this.onCancel = onCancel;
+        this.lang = lang;
     }
 
     onOpen() {
         const { contentEl } = this;
-        contentEl.createEl('h2', { text: '创建新笔记' });
-        contentEl.createEl('p', { text: `是否要创建一个路径为 ${this.path} 的笔记。` });
+        const tr = t(this.lang);
+        contentEl.createEl('h2', { text: tr.createNewNote });
+        contentEl.createEl('p', { text: `${tr.createNewNoteConfirm} ${this.path} ?` });
 
         const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
         buttonContainer.createEl('button', {
-            text: '创建',
+            text: tr.createBtn,
             cls: 'mod-cta'
         }).addEventListener('click', () => {
             this.close();
@@ -39,7 +43,7 @@ class CreateFileModal extends Modal {
         });
 
         buttonContainer.createEl('button', {
-            text: '取消',
+            text: tr.cancelBtn,
             cls: 'mod-cta',
             attr: { style: 'margin-left: 8px;' }
         }).addEventListener('click', () => {
@@ -153,10 +157,12 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
         const taskStr = "- [ ] " + append;
         const section = this.state.userOptions.sectionForNewTasks;
         const useTemplater = this.state.userOptions.useTemplater;
+        const lang = this.state.userOptions.language;
         this.app.vault.adapter.exists(path).then(exist => {
             if (!exist) {
                 new CreateFileModal(
                     this.app,
+                    lang,
                     path,
                     section,
                     taskStr,
@@ -164,19 +170,19 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                         if (useTemplater) {
                             const templater = this.getTemplater();
                             if (!templater) {
-                                new Notice("Templater plugin not found. Please enable Templater plugin.", 5000);
+                                new Notice(t(lang).templaterNotFound, 5000);
                                 return;
                             }
 
                             const templateFilePath = this.state.userOptions.templaterTemplateFile;
                             if (!templateFilePath) {
-                                new Notice("Please select a Templater template file in the plugin settings.", 5000);
+                                new Notice(t(lang).templaterNoTemplate, 5000);
                                 return;
                             }
 
                             const templateFile = this.app.vault.getAbstractFileByPath(templateFilePath);
                             if (!templateFile) {
-                                new Notice("Template file not found: " + templateFilePath, 5000);
+                                new Notice(formatTemplateFileNotFound(lang, templateFilePath), 5000);
                                 return;
                             }
 
@@ -193,14 +199,12 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                                     true
                                 );
 
-                                // Verify file was created and template was applied
                                 const file = this.app.vault.getAbstractFileByPath(path);
                                 if (!file) {
-                                    new Notice("File was not created properly by Templater.", 5000);
+                                    new Notice(t(lang).fileNotCreated, 5000);
                                     return;
                                 }
 
-                                // Verify template was applied with retry mechanism
                                 let content = '';
                                 let attempts = 0;
                                 const maxAttempts = 5;
@@ -216,53 +220,46 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                                 }
                               
                                 if (!content || content.trim().length === 0) {
-                                    new Notice("Template was not applied properly after multiple retries.", 5000);
+                                    new Notice(t(lang).templateNotApplied, 5000);
                                     return;
                                 }
 
-                                // Add task to the file
                                 await this.addTaskToFile(path, section, taskStr);
 
-                                // Open the file
                                 this.app.workspace.openLinkText('', path);
 
                             } catch (reason) {
-                                new Notice("Error when creating file with Templater: " + reason, 5000);
+                                new Notice(formatErrorCreatingFileTemplater(lang, reason), 5000);
                             }
                         } else {
-                            // Original behavior: create file with section and task
                             const content = section + "\n" + taskStr;
                             this.app.vault.create(path, content)
                                 .then(() => {
                                     this.onUpdateTasks();
-                                    // Open the newly created file
                                     this.app.workspace.openLinkText('', path);
                                 })
                                 .catch(reason => {
-                                    return new Notice("Error when creating file " + path + " for new task: " + reason, 5000);
+                                    return new Notice(formatErrorCreatingFile(lang, path, reason), 5000);
                                 });
                         }
                     },
                     () => {
-                        // User cancelled, do nothing
                     }
                 ).open();
                 return;
             }
-            // File exists, add task to existing file
             this.app.vault.adapter.read(path).then(content => {
                 const lines = content.split('\n');
                 lines.splice(lines.indexOf(section) + 1, 0, taskStr);
                 this.app.vault.adapter.write(path, lines.join("\n"))
                     .then(() => {
                         this.onUpdateTasks();
-                        // Open the file after adding the task
                         this.app.workspace.openLinkText('', path);
                     })
                     .catch(reason => {
-                        return new Notice("Error when writing new tasks to " + path + "." + reason, 5000);
+                        return new Notice(formatErrorWritingTask(lang, path, reason), 5000);
                     });
-            }).catch(reason => new Notice("Error when reading file " + path + "." + reason, 5000));
+            }).catch(reason => new Notice(formatErrorReadingFile(lang, path, reason), 5000));
         })
     }
 
@@ -275,9 +272,10 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
     }
 
     handleOpenFile(path: string, position: Pos, openTaskEdit = false) {
+        const lang = this.state.userOptions.language;
         this.app.vault.adapter.exists(path).then(exist => {
             if (!exist) {
-                new Notice("No such file: " + path, 5000);
+                new Notice(formatNoSuchFile(lang, path), 5000);
                 return;
             }
             this.app.workspace.openLinkText('', path).then(() => {
@@ -301,11 +299,11 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                         }
                     }
                 } catch (err) {
-                    new Notice("Error when trying open file: " + err, 5000);
+                    new Notice(formatErrorOpeningFile(lang, err), 5000);
                 }
             })
         }).catch(reason => {
-            new Notice("Something went wrong: " + reason, 5000);
+            new Notice(formatSomethingWentWrong(lang, reason), 5000);
         })
     }
 

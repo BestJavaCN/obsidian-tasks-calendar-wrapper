@@ -2,6 +2,7 @@ import moment from 'moment';
 import * as React from 'react';
 import { getFileTitle } from '../../../dataview-util/dataview';
 import { TaskStatus, doneDateSymbol, dueDateSymbol, recurrenceSymbol, scheduledDateSymbol, startDateSymbol } from '../../../utils/tasks';
+import { t } from '../../../src/i18n';
 import * as Icons from './asserts/icons';
 import { QuickEntryHandlerContext, TaskListContext, TodayFocusEventHandlersContext, UserOptionContext } from './context';
 import { TaskItemView } from './taskitemview';
@@ -15,17 +16,18 @@ type DateViewProps = Readonly<typeof defaultDateProps>;
 export class DateView extends React.Component<DateViewProps> {
     render(): React.ReactNode {
         return (
-            <UserOptionContext.Consumer>{({ forward, dateFormat }) => (
+            <UserOptionContext.Consumer>{({ forward, dateFormat, language }) => (
                 < TaskListContext.Consumer >{({ taskList, entryOnDate }) => {
                     const entryOnDateMoment = moment(entryOnDate);
                     const isEntryDate = this.props.date.format("YYYYMMDD") === entryOnDateMoment.format("YYYYMMDD");
                     const isToday = this.props.date.isSame(moment(), 'date');
+                    const tr = t((language || "en") as "en" | "zh");
                     if (forward && !isToday) {
                         taskList = taskList.filter(t => t.status !== TaskStatus.overdue)
                     }
                     return (
                         <div>
-                            {isEntryDate && <TodayFocus visual={"Focus On Today"} />}
+                            {isEntryDate && <TodayFocus visual={tr.focusOnToday} />}
                             {isEntryDate && <Counters />}
                             {isEntryDate && <QuickEntry />}
                             {
@@ -189,6 +191,9 @@ class QuickEntry extends React.Component<Record<string, unknown>, QuickEntryStat
     render(): React.ReactNode {
         const filterNames = ['+', "date", "priority"]
         return (
+            <UserOptionContext.Consumer>{({ language }) => {
+                const tr = t((language || "en") as "en" | "zh");
+                return (
             <div className='quickEntryPanel' ref={this.quickEntryPanel}>
                 <div className='left'>
                     <div className='actionSelect'>
@@ -197,13 +202,13 @@ class QuickEntry extends React.Component<Record<string, unknown>, QuickEntryStat
                             if (this.textInput.current)
                                 this.textInput.current.value = ""
                         }}>
-                            <option value={"append"} key={1}>New Task</option>
-                            <option value={"filter"} key={2}>Filter</option>
+                            <option value={"append"} key={1}>{tr.newTask}</option>
+                            <option value={"filter"} key={2}>{tr.filter}</option>
                         </select>
                         {this.state.action === "append"
                             ?
                             <UserOptionContext.Consumer>{({ taskFiles }) =>
-                                <select name='File name' className='fileSelect' ref={this.fileSecect} aria-label='Select a note to add a new task to'
+                                <select name='File name' className='fileSelect' ref={this.fileSecect} aria-label={tr.selectNote}
                                     onChange={this.onQuickEntryFileSelectChange} defaultValue={taskFiles[0]} >
                                     {
                                         [...taskFiles].map(
@@ -237,7 +242,7 @@ class QuickEntry extends React.Component<Record<string, unknown>, QuickEntryStat
 
                     <div className='left'>
                         {this.state.action === "append" ?
-                            <input className='newTask' type='text' placeholder='Enter your tasks here' ref={this.textInput}
+                            <input className='newTask' type='text' placeholder={tr.enterYourTasks} ref={this.textInput}
                                 onInput={this.onQuickEntryNewTaskInput} onKeyUp={this.onQuickEntryNewTaskKeyUp}
                                 onFocus={this.onQuickEntryPanelFocus} onBlur={this.onQuickEntryPanelBlur} />
                             :
@@ -245,13 +250,13 @@ class QuickEntry extends React.Component<Record<string, unknown>, QuickEntryStat
                                 {this.state.filters.map((f, i) => {
                                     if (f === 'date') {
                                         return <div key={i} className='dateFilter'>
-                                            <a key={0}>From: </a><input key={1} type='date' onChange={e => this.dateFilter[0] = e.target.value} />
-                                            <a key={2}>  To: </a><input key={3} type='date' onChange={e => this.dateFilter[1] = e.target.value} />
+                                            <a key={0}>{tr.from} </a><input key={1} type='date' onChange={e => this.dateFilter[0] = e.target.value} />
+                                            <a key={2}>  {tr.to} </a><input key={3} type='date' onChange={e => this.dateFilter[1] = e.target.value} />
                                         </div>
                                     } else if (f === 'priority') {
                                         return <div key={i} className='actionSelect'>
-                                            <a>Priorities: </a><MultiSelect key={1} name='priorityFilter' className=''
-                                                options={['+', '1', '2', '3', '4']} visual={['➕', 'High', 'Medium', 'None', 'Low']}
+                                            <a>{tr.priorities} </a><MultiSelect key={1} name='priorityFilter' className=''
+                                                options={['+', '1', '2', '3', '4']} visual={['➕', tr.high, tr.medium, tr.none, tr.low]}
                                                 fallbackValueIndex={0} selectChangeHandler={(res) => { this.priorityFilter = res; }} />
                                         </div>
                                     } return <div key={i} />
@@ -264,13 +269,10 @@ class QuickEntry extends React.Component<Record<string, unknown>, QuickEntryStat
 
                 <div className='right'>
                     <QuickEntryHandlerContext.Consumer>{callback => (
-                        <button className='ok' ref={this.okButton} aria-label='Append new task to selected note'
+                        <button className='ok' ref={this.okButton} aria-label={tr.appendNewTask}
                             onClick={() => {
                                 if (this.state.action === 'append') {
-                                    // there is an issue with this.state.selectedFile:
-                                    // the value is not setted when initialize.
-                                    // using this.fileSecect.current?.value for emergency.
-                                    const filePath = this.fileSecect.current?.value; // this.state.selectedFile;
+                                    const filePath = this.fileSecect.current?.value;
                                     const newTask = this.textInput.current?.value;
                                     if (!newTask || !filePath) return;
                                     if (newTask.length > 1) {
@@ -290,6 +292,9 @@ class QuickEntry extends React.Component<Record<string, unknown>, QuickEntryStat
                     </QuickEntryHandlerContext.Consumer>
                 </div>
             </div >
+                );
+            }}
+            </UserOptionContext.Consumer>
         );
     }
 }
