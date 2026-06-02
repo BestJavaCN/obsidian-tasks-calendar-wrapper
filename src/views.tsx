@@ -53,7 +53,6 @@ export class TasksTimelineView extends BaseTasksView {
         this.registerEvent(this.app.metadataCache.on('changed', this.onFileChanged));
         // 文件删除时移除对应任务
         this.registerEvent(this.app.vault.on('delete', this.onFileDeleted));
-        this.registerEvent(this.app.workspace.on("window-open", this.onReloadTasks));
 
         const { containerEl } = this;
         const container = containerEl.children[1];
