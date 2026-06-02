@@ -90,58 +90,81 @@ export class TasksTimelineView extends BaseTasksView {
     private onFileChanged = (file: TFile, _data: string, _cache: CachedMetadata) => {
         if (!file?.path) return;
         this.pendingFiles.add(file.path);
+        this.scheduleIncrementalUpdate();
+    };
+
+    /**
+     * 调度增量更新（带防抖）。如果已有定时器则重置；如果正在重载则延迟重试。
+     */
+    private scheduleIncrementalUpdate() {
         if (this.debounceTimer !== null) {
             clearTimeout(this.debounceTimer);
         }
-        this.debounceTimer = setTimeout(async () => {
-            const files = [...this.pendingFiles];
-            this.pendingFiles.clear();
-            this.debounceTimer = null;
+        this.debounceTimer = setTimeout(() => this.processPendingFiles(), TasksTimelineView.DEBOUNCE_MS);
+    }
 
-            if (this.isReloading) return;
-            this.isReloading = true;
+    /**
+     * 实际执行增量更新：清空待处理文件队列，逐文件重新解析。
+     * 若当前正在全量/增量重载中，自动延迟重试，避免丢弃变更。
+     */
+    private async processPendingFiles() {
+        this.debounceTimer = null;
 
-            try {
-                if (!this.adapter) {
-                    this.adapter = new ObsidianTaskAdapter(this.app);
-                }
-                const adapter = this.adapter;
-                const fileExcludeFilter = this.userOptionModel.get("excludePaths") || [];
-                const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
-                const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
-                const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+        if (this.isReloading) {
+            // 正在重载中，延迟重试
+            this.debounceTimer = setTimeout(() => this.processPendingFiles(), TasksTimelineView.DEBOUNCE_MS);
+            return;
+        }
 
-                for (const filePath of files) {
-                    const file = this.app.vault.getAbstractFileByPath(filePath);
-                    if (file instanceof TFile) {
-                        await adapter.updateFileTasks(
-                            file, fileIncludeFilter, fileExcludeFilter,
-                            fileIncludeTagsFilter, fileExcludeTagsFilter
-                        );
-                    }
-                }
+        const files = [...this.pendingFiles];
+        if (files.length === 0) return;
+        this.pendingFiles.clear();
+        this.isReloading = true;
 
-                const taskList = adapter.getTaskList();
-                const changedFilePaths = new Set(files);
-
-                // 只解析变更文件中的新任务，其他文件的任务保持已解析状态
-                // 避免对已解析任务重复调用 parseTasks 导致日期等字段被覆盖
-                const changedTasks = taskList.filter(t => changedFilePaths.has(t.path));
-                const unchangedTasks = taskList.filter(t => !changedFilePaths.has(t.path));
-
-                const parsedChangedTasks = await this.parseTasks(changedTasks);
-                const allTasks = [...unchangedTasks, ...parsedChangedTasks];
-                const filteredTasks = this.filterTasks(allTasks);
-
-                this.taskListModel.set({ taskList: filteredTasks });
-            } catch (reason) {
-                new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
-                console.error("Error reloading tasks:", reason);
-            } finally {
-                this.isReloading = false;
+        try {
+            if (!this.adapter) {
+                this.adapter = new ObsidianTaskAdapter(this.app);
             }
-        }, TasksTimelineView.DEBOUNCE_MS);
-    };
+            const adapter = this.adapter;
+            const fileExcludeFilter = this.userOptionModel.get("excludePaths") || [];
+            const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
+            const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
+            const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+
+            for (const filePath of files) {
+                const file = this.app.vault.getAbstractFileByPath(filePath);
+                if (file instanceof TFile) {
+                    await adapter.updateFileTasks(
+                        file, fileIncludeFilter, fileExcludeFilter,
+                        fileIncludeTagsFilter, fileExcludeTagsFilter
+                    );
+                }
+            }
+
+            const taskList = adapter.getTaskList();
+            const changedFilePaths = new Set(files);
+
+            // 只解析变更文件中的新任务，其他文件的任务保持已解析状态
+            // 避免对已解析任务重复调用 parseTasks 导致日期等字段被覆盖
+            const changedTasks = taskList.filter(t => changedFilePaths.has(t.path));
+            const unchangedTasks = taskList.filter(t => !changedFilePaths.has(t.path));
+
+            const parsedChangedTasks = await this.parseTasks(changedTasks);
+            const allTasks = [...unchangedTasks, ...parsedChangedTasks];
+            const filteredTasks = this.filterTasks(allTasks);
+
+            this.taskListModel.set({ taskList: filteredTasks });
+        } catch (reason) {
+            new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
+            console.error("Error reloading tasks:", reason);
+        } finally {
+            this.isReloading = false;
+            // 处理期间可能有新文件变更进来，继续调度
+            if (this.pendingFiles.size > 0) {
+                this.scheduleIncrementalUpdate();
+            }
+        }
+    }
 
     /**
      * 文件删除时，移除该文件对应的所有任务并更新视图
@@ -150,11 +173,16 @@ export class TasksTimelineView extends BaseTasksView {
         if (!file?.path) return;
         if (!this.adapter) return;
 
-        this.adapter.removeFileTasks(file.path);
+        try {
+            this.adapter.removeFileTasks(file.path);
 
-        const taskList = this.adapter.getTaskList();
-        const filteredTasks = this.filterTasks(taskList);
-        this.taskListModel.set({ taskList: filteredTasks });
+            const taskList = this.adapter.getTaskList();
+            const filteredTasks = this.filterTasks(taskList);
+            this.taskListModel.set({ taskList: filteredTasks });
+        } catch (reason) {
+            new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
+            console.error("Error handling file deletion:", reason);
+        }
     };
 
     /**
@@ -242,22 +270,20 @@ export class TasksTimelineView extends BaseTasksView {
             this.userOptionModel.get("dailyNoteFormat"),
             this.userOptionModel.get("dailyNoteFolder"));
         const forward = this.userOptionModel.get("forward");
+        const convertTime = this.userOptionModel.get("convert24HourTimePrefix");
 
-        let processedTasks = taskList
-            .map(TaskMapable.tasksPluginTaskParser)
-            .map(TaskMapable.dataviewTaskParser)
-            .map(dailyNoteFormatParser)
-            .map(TaskMapable.tagsParser)
-            .map(TaskMapable.remainderParser)
-            .map(TaskMapable.postProcessor)
-            //.map(TaskMapable.taskLinkParser)
+        const result: TaskDataModel[] = new Array(taskList.length);
+        for (let i = 0; i < taskList.length; i++) {
+            let task = taskList[i];
+            task = TaskMapable.tasksPluginTaskParser(task);
+            task = TaskMapable.dataviewTaskParser(task);
+            task = dailyNoteFormatParser(task);
+            task = TaskMapable.tagsParser(task);
+            task = TaskMapable.remainderParser(task);
+            task = TaskMapable.postProcessor(task);
 
-            /**
-             * Option Forward
-             * Current behavior: show unplanned and overdue tasks in today's part.
-             */
-            .map((task: TaskDataModel): TaskDataModel => {
-                if (!forward) return task;
+            // Forward: show unplanned and overdue tasks in today's part
+            if (forward) {
                 if (task.status === TaskStatus.unplanned) {
                     task.dates.set(TaskStatus.unplanned, moment());
                 } else if (task.status === TaskStatus.done && !task.completion &&
@@ -267,31 +293,26 @@ export class TasksTimelineView extends BaseTasksView {
                     !TaskMapable.filterDate(moment())(task)) {
                     task.dates.set(TaskStatus.overdue, moment());
                 }
-                return task;
-            })
-            /**
-             * Post processer
-             */
-            .map((task: TaskDataModel): TaskDataModel => {
-                if (!stautsOrder) return task;
-                if (stautsOrder.includes(task.status)) {
-                    task.order = stautsOrder.indexOf(task.status) + 1;
-                }
-                return task;
-            });
+            }
 
-        if (this.userOptionModel.get("convert24HourTimePrefix")) {
-            processedTasks = processedTasks.map((task: TaskDataModel): TaskDataModel => {
-                if (!task.visual || task.visual.length < 5) return task;
+            // Set order based on status
+            if (stautsOrder && stautsOrder.includes(task.status)) {
+                task.order = stautsOrder.indexOf(task.status) + 1;
+            }
+
+            // Convert 24-hour time prefix to 12-hour
+            if (convertTime && task.visual && task.visual.length >= 5) {
                 const timePrefix = moment(task.visual.substring(0, 5), "HH:mm", true);
-                if (!timePrefix.isValid()) return task;
-                const updatedTimePrefix = timePrefix.format("h:mm a");
-                task.visual = updatedTimePrefix + task.visual.substring(5);
-                return task;
-            });
+                if (timePrefix.isValid()) {
+                    const updatedTimePrefix = timePrefix.format("h:mm a");
+                    task.visual = updatedTimePrefix + task.visual.substring(5);
+                }
+            }
+
+            result[i] = task;
         }
 
-        return processedTasks;
+        return result;
     }
 
     getViewType(): string {

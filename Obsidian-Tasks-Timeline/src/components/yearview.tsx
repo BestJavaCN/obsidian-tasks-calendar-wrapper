@@ -1,7 +1,6 @@
-import moment, { Moment } from 'moment';
+import moment from 'moment';
 import * as React from 'react';
 import * as TaskMapable from '../../../utils/taskmapable';
-import { innerDateFormat } from '../../../utils/tasks';
 import { TaskListContext } from './context';
 import { DateView } from './dateview';
 
@@ -12,19 +11,10 @@ type YearViewProps = Readonly<typeof defaultYearViewProps>;
 export class YearView extends React.Component<YearViewProps> {
     render(): React.ReactNode {
         return (
-            <TaskListContext.Consumer>{({ taskList, entryOnDate }) => {
+            <TaskListContext.Consumer>{({ taskList, entryOnDate, involvedDates }) => {
                 const tasksOfThisYear = taskList;
-                const daysOfThisYear: Set<string> = new Set();
-                tasksOfThisYear.forEach((t) => {
-                    t.due && daysOfThisYear.add(t.due.format(innerDateFormat));
-                    t.scheduled && daysOfThisYear.add(t.scheduled.format(innerDateFormat));
-                    t.created && daysOfThisYear.add(t.created.format(innerDateFormat));
-                    t.start && daysOfThisYear.add(t.start.format(innerDateFormat));
-                    t.completion && daysOfThisYear.add(t.completion.format(innerDateFormat));
-                    t.dates.forEach((d: Moment, k: string) => {
-                        daysOfThisYear.add(d.format(innerDateFormat));
-                    });
-                })
+                // 使用上层预计算的日期集合，避免重复遍历
+                const daysOfThisYear = new Set<string>(involvedDates);
                 if (this.props.year === moment(entryOnDate).year() && !daysOfThisYear.has(entryOnDate))
                     daysOfThisYear.add(entryOnDate);
                 return (
@@ -37,7 +27,7 @@ export class YearView extends React.Component<YearViewProps> {
                             .map((d, i) => {
                                 const tasksOfThisDate = tasksOfThisYear.filter(TaskMapable.filterDate(moment(d)));
                                 return (
-                                    <TaskListContext.Provider value={{ taskList: tasksOfThisDate, entryOnDate: entryOnDate }} key={i}>
+                                    <TaskListContext.Provider value={{ taskList: tasksOfThisDate, entryOnDate: entryOnDate, involvedDates: [] }} key={i}>
                                         <DateView date={moment(d)} key={i} />
                                     </TaskListContext.Provider>
                                 )

@@ -97,9 +97,14 @@ export class ObsidianTaskAdapter {
         if (excludeTags.length !== 0)
             filteredFiles = filteredFiles.filter(this.fileExcludeTagsFilter(excludeTags));
 
-        await Promise.all(filteredFiles.map(async (file: TFile) => {
-            await this.parseFileIntoTarget(file, this.tasksList);
-        }));
+        // Process files in batches to avoid overwhelming the system
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < filteredFiles.length; i += BATCH_SIZE) {
+            const batch = filteredFiles.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(async (file: TFile) => {
+                await this.parseFileIntoTarget(file, this.tasksList);
+            }));
+        }
     }
 
     /**
@@ -130,7 +135,10 @@ export class ObsidianTaskAdapter {
         const startTime = Date.now();
         return new Promise(resolve => {
             const check = () => {
-                if (this.app.metadataCache.getFileCache(file) !== null || Date.now() - startTime > timeoutMs) {
+                if (this.app.metadataCache.getFileCache(file) !== null) {
+                    resolve();
+                } else if (Date.now() - startTime > timeoutMs) {
+                    console.warn("Metadata cache timeout for file:", file.path);
                     resolve();
                 } else {
                     setTimeout(check, 50);

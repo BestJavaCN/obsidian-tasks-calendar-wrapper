@@ -20,11 +20,20 @@ type TimelineProps = Readonly<typeof defaultTimelineProps>;
 type TimelineStates = typeof defaultTimelineStates;
 export class TimelineView extends React.Component<TimelineProps, TimelineStates> {
     //private calendar: Map<string, Set<number>> = new Map();
+    private counterClickHandlers: Record<string, () => void>;
+
     constructor(props: TimelineProps) {
         super(props);
 
         this.handleCounterFilterClick = this.handleCounterFilterClick.bind(this);
         this.handleTodayFocus = this.handleTodayFocus.bind(this);
+
+        // 预先绑定计数器点击回调，避免每次 render 创建新函数
+        this.counterClickHandlers = {
+            todoFilter: () => this.handleCounterFilterClick('todoFilter'),
+            overdueFilter: () => this.handleCounterFilterClick('overdueFilter'),
+            unplannedFilter: () => this.handleCounterFilterClick('unplannedFilter'),
+        };
 
         this.state = {
             filter: this.props.userOptions.defaultFilters,
@@ -53,16 +62,28 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     render(): React.ReactNode {
         const involvedDates: Set<string> = new Set();
         const taskList = this.props.taskList;
+        let overdueCount = 0;
+        let unplannedCount = 0;
+        let completedCount = 0;
+        let cancelledCount = 0;
         taskList.forEach((t: TaskDataModel) => {
+            // 收集日期
             t.due && involvedDates.add(t.due.format(innerDateFormat));
             t.scheduled && involvedDates.add(t.scheduled.format(innerDateFormat));
             t.created && involvedDates.add(t.created.format(innerDateFormat));
             t.start && involvedDates.add(t.start.format(innerDateFormat));
             t.completion && involvedDates.add(t.completion.format(innerDateFormat));
-            t.dates.forEach((d: Moment, k: string) => {
+            t.dates.forEach((d: Moment) => {
                 involvedDates.add(d.format(innerDateFormat));
             });
-        })
+            // 统计状态计数
+            switch (t.status) {
+                case TaskStatus.overdue: overdueCount++; break;
+                case TaskStatus.unplanned: unplannedCount++; break;
+                case TaskStatus.done: completedCount++; break;
+                case TaskStatus.cancelled: cancelledCount++; break;
+            }
+        });
 
         if (!involvedDates.has(moment().format(innerDateFormat)))
             involvedDates.add(moment().format(innerDateFormat))
@@ -74,12 +95,6 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         const firstDay = sortedDatas.first();
         const lastDay = sortedDatas.last();
 
-        //const taskOfToday = taskList.filter(TaskMapable.filterDate(moment()));
-        const overdueCount: number = taskList.filter(t => t.status === TaskStatus.overdue).length;
-        const unplannedCount: number = taskList.filter(t => t.status === TaskStatus.unplanned).length;
-        const completedCount: number = taskList.filter(t => t.status === TaskStatus.done).length;
-        const cancelledCount: number = taskList.filter(t => t.status === TaskStatus.cancelled).length;
-        // .due, .scheduled, .process, .start
         const todoCount: number = taskList.length - unplannedCount - completedCount - cancelledCount - overdueCount;
 
         const styles = new Array<string>;
@@ -134,19 +149,19 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                         language: this.props.userOptions.language,
                         counters: [
                             {
-                                onClick: () => { this.handleCounterFilterClick('todoFilter') },
+                                onClick: this.counterClickHandlers.todoFilter,
                                 cnt: todoCount,
                                 label: t(this.props.userOptions.language).todo,
                                 id: "todo",
                                 ariaLabel: t(this.props.userOptions.language).todoTasks
                             }, {
-                                onClick: () => { this.handleCounterFilterClick('overdueFilter') },
+                                onClick: this.counterClickHandlers.overdueFilter,
                                 cnt: overdueCount,
                                 id: "overdue",
                                 label: t(this.props.userOptions.language).overdue,
                                 ariaLabel: t(this.props.userOptions.language).overdueTasks
                             }, {
-                                onClick: () => { this.handleCounterFilterClick('unplannedFilter') },
+                                onClick: this.counterClickHandlers.unplannedFilter,
                                 cnt: unplannedCount,
                                 id: "unplanned",
                                 label: t(this.props.userOptions.language).unplanned,
@@ -155,17 +170,25 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                         ]
                     }}>
                         <span>
-                            {years.map((y, i) => (
+                            {years.map((y, i) => {
+                                const yearMoment = moment().year(y);
+                                const tasksOfYear = taskList.filter(TaskMapable.filterYear(yearMoment));
+                                const datesOfYear = [...involvedDates]
+                                    .filter(d => moment(d).year() === y)
+                                    .sort();
+                                return (
                                 <TaskListContext.Provider value={
                                     {
-                                        taskList: taskList.filter(TaskMapable.filterYear(moment().year(y))),
+                                        taskList: tasksOfYear,
                                         entryOnDate: this.props.userOptions.entryPosition === "top" ? firstDay! :
                                             this.props.userOptions.entryPosition === "bottom" ? lastDay! : moment().format(innerDateFormat),
+                                        involvedDates: datesOfYear,
                                     }
                                 } key={i}>
                                     <YearView year={y} key={y} />
                                 </TaskListContext.Provider>
-                            ))}
+                                );
+                            })}
                         </span>
                     </UserOptionContext.Provider>
                 </TodayFocusEventHandlersContext.Provider>

@@ -132,10 +132,19 @@ const defaultContentProps = {
 }
 type ContentProps = Readonly<typeof defaultContentProps>
 class Content extends React.Component<ContentProps> {
+    private lastDisplay: string = "";
+    private lastFileName: string = "";
+    private cachedHtml: string = "";
+
     render(): React.ReactNode {
-        const cont = createEl("a")
-        MarkdownRenderer.renderMarkdown(this.props.display, cont, this.props.fileName, TasksTimelineView.view!);
-        return <a dangerouslySetInnerHTML={{ __html: cont.firstElementChild!.innerHTML }} />
+        if (this.props.display !== this.lastDisplay || this.props.fileName !== this.lastFileName) {
+            const cont = createEl("a");
+            MarkdownRenderer.renderMarkdown(this.props.display, cont, this.props.fileName, TasksTimelineView.view!);
+            this.cachedHtml = cont.firstElementChild?.innerHTML ?? "";
+            this.lastDisplay = this.props.display;
+            this.lastFileName = this.props.fileName;
+        }
+        return <a dangerouslySetInnerHTML={{ __html: this.cachedHtml }} />
     }
 }
 
@@ -149,19 +158,22 @@ const defaultStripWithIconProps = {
 
 type StripWithIconProps = Readonly<typeof defaultStripWithIconProps>
 class StripWithIcon extends React.Component<StripWithIconProps> {
+    private handleChange = () => {
+        if (!this.props.useBuiltinStyle) this.props.onToggle();
+    };
+
+    private handleLabelClick = () => {
+        if (this.props.useBuiltinStyle) this.props.onToggle();
+    };
 
     render(): React.ReactNode {
         return (
             <div className='timeline' >
                 <input id="statusMarker" type="checkbox" className={this.props.useBuiltinStyle ? "icon" : ""}
                     data-task={this.props.marker}
-                    checked={this.props.marker !== ' '} onChange={() => {
-                        if (!this.props.useBuiltinStyle) this.props.onToggle();
-                    }}></input>
+                    checked={this.props.marker !== ' '} onChange={this.handleChange}></input>
                 {this.props.useBuiltinStyle &&
-                    <label htmlFor="statusMarker" className="icon" onClick={() => {
-                        if (this.props.useBuiltinStyle) this.props.onToggle();
-                    }}>{Icons.getTaskStatusIcon(this.props.status)}</label>}
+                    <label htmlFor="statusMarker" className="icon" onClick={this.handleLabelClick}>{Icons.getTaskStatusIcon(this.props.status)}</label>}
             </div>
         )
     }
@@ -181,7 +193,7 @@ class TagBadge extends React.Component<TagBadgeProps> {
                 const tag = this.props.tag;
                 const tagText = tag.replace("#", "");
                 let color;
-                if (Object.keys(tagPalette).contains(tag)) color = tagPalette[tag];
+                if (Object.keys(tagPalette).includes(tag)) color = tagPalette[tag];
                 let style: Record<string, unknown>;
                 if (color) {
                     style = {

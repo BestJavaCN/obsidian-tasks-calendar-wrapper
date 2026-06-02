@@ -7,6 +7,7 @@ import { CounterProps } from './dateview';
 export const TaskListContext = React.createContext({
     taskList: [] as TaskDataModel[],
     entryOnDate: moment().toString() as string,
+    involvedDates: [] as string[],
 })
 
 export const UserOptionContext = React.createContext({

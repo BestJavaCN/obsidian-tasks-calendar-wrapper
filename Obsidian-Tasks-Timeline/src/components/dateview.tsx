@@ -38,7 +38,7 @@ export class DateView extends React.Component<DateViewProps> {
                                     <div className={isToday ? "details today" : "details"}
                                         data-year={this.props.date.format("YYYY")}
                                         data-types={[...new Set(taskList.map((t => t.status)))].join(" ")}>
-                                        <TaskListContext.Provider value={{ taskList: taskList, entryOnDate: entryOnDate }}>
+                                        <TaskListContext.Provider value={{ taskList: taskList, entryOnDate: entryOnDate, involvedDates: [] }}>
                                             <NormalDateContent date={this.props.date} />
                                         </TaskListContext.Provider>
                                     </div>
