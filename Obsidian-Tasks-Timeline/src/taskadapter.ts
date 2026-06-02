@@ -74,19 +74,18 @@ export class ObsidianTaskAdapter {
         if (excludeTags.length !== 0)
             filteredFiles = filteredFiles.filter(this.fileExcludeTagsFilter(excludeTags));
 
-        filteredFiles.forEach(async (file: TFile) => {
+        await Promise.all(filteredFiles.map(async (file: TFile) => {
             const link = Link.file(file.path);
-            this.app.vault.cachedRead(file)
-                .then((content: string) => {
-                    const cache = this.app.metadataCache.getFileCache(file);
-                    cache?.listItems?.forEach(
-                        this.fromItemCache(link, file.path, content, cache.sections, cache.links, cache.frontmatter, cache.tags)
-                    );
-                })
-                .catch(reason => {
-                    console.error("Read file from obsidian cache failed: " + reason)
-                })
-        })
+            try {
+                const content = await this.app.vault.cachedRead(file);
+                const cache = this.app.metadataCache.getFileCache(file);
+                cache?.listItems?.forEach(
+                    this.fromItemCache(link, file.path, content, cache.sections, cache.links, cache.frontmatter, cache.tags)
+                );
+            } catch (reason) {
+                console.error("Read file from obsidian cache failed: " + reason);
+            }
+        }));
     }
 
     /**

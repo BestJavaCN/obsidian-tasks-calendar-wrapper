@@ -51,211 +51,161 @@ function filterByDateTimeRange(from: moment.Moment, to: moment.Moment, by: momen
  * @param item 
  * @returns 
  */
-export async function tasksPluginTaskParser(item: Promise<TasksUtil.TaskDataModel>): Promise<TasksUtil.TaskDataModel> {
-    return new Promise((resolve, reject) => {
-        item
-            .then((itemValue) => {
-                // Check the line to see if it is a markdown task.
-                let description = itemValue.visual || "";
-                // Keep matching and removing special strings from the end of the
-                // description in any order. The loop should only run once if the
-                // strings are in the expected order after the description.
-                let matched: boolean;
-                let priority: TasksUtil.PriorityLabel = "";
-                let startDate: moment.Moment | undefined = undefined;
-                let scheduledDate: moment.Moment | undefined = undefined;
-                //const scheduledDateIsInferred = false;
-                let dueDate: moment.Moment | undefined = undefined;
-                let doneDate: moment.Moment | undefined = undefined;
-                let recurrenceRule = '';
-                //const recurrence: string | null = null;
-                // Tags that are removed from the end while parsing, but we want to add them back for being part of the description.
-                // In the original task description they are possibly mixed with other components
-                // (e.g. #tag1 <due date> #tag2), they do not have to all trail all task components,
-                // but eventually we want to paste them back to the task description at the end
-                let trailingTags = '';
-                // Add a "max runs" failsafe to never end in an endless loop:
-                const maxRuns = 20;
-                let runs = 0;
-                do {
-                    matched = false;
-                    const priorityMatch = description.match(TasksUtil.TaskRegularExpressions.priorityRegex);
-                    if (priorityMatch !== null) {
-                        priority = TasksUtil.TasksPrioritySymbolToLabel[priorityMatch[1] as TasksUtil.TasksPrioritySymbol];
-                        description = description.replace(TasksUtil.TaskRegularExpressions.priorityRegex, '').trim();
-                        matched = true;
-                    }
+export function tasksPluginTaskParser(item: TasksUtil.TaskDataModel): TasksUtil.TaskDataModel {
+    let description = item.visual || "";
+    let matched: boolean;
+    let priority: TasksUtil.PriorityLabel = "";
+    let startDate: moment.Moment | undefined = undefined;
+    let scheduledDate: moment.Moment | undefined = undefined;
+    let dueDate: moment.Moment | undefined = undefined;
+    let doneDate: moment.Moment | undefined = undefined;
+    let recurrenceRule = '';
+    let trailingTags = '';
+    const maxRuns = 20;
+    let runs = 0;
 
-                    const doneDateMatch = description.match(TasksUtil.TaskRegularExpressions.doneDateRegex);
-                    if (doneDateMatch !== null) {
-                        doneDate = window.moment(doneDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
-                        description = description.replace(TasksUtil.TaskRegularExpressions.doneDateRegex, '').trim();
-                        matched = true;
-                    }
+    do {
+        matched = false;
+        const priorityMatch = description.match(TasksUtil.TaskRegularExpressions.priorityRegex);
+        if (priorityMatch !== null) {
+            priority = TasksUtil.TasksPrioritySymbolToLabel[priorityMatch[1] as TasksUtil.TasksPrioritySymbol];
+            description = description.replace(TasksUtil.TaskRegularExpressions.priorityRegex, '').trim();
+            matched = true;
+        }
 
-                    const dueDateMatch = description.match(TasksUtil.TaskRegularExpressions.dueDateRegex);
-                    if (dueDateMatch !== null) {
-                        dueDate = window.moment(dueDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
-                        description = description.replace(TasksUtil.TaskRegularExpressions.dueDateRegex, '').trim();
-                        matched = true;
-                    }
+        const doneDateMatch = description.match(TasksUtil.TaskRegularExpressions.doneDateRegex);
+        if (doneDateMatch !== null) {
+            doneDate = window.moment(doneDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
+            description = description.replace(TasksUtil.TaskRegularExpressions.doneDateRegex, '').trim();
+            matched = true;
+        }
 
-                    const scheduledDateMatch = description.match(TasksUtil.TaskRegularExpressions.scheduledDateRegex);
-                    if (scheduledDateMatch !== null) {
-                        scheduledDate = window.moment(scheduledDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
-                        description = description.replace(TasksUtil.TaskRegularExpressions.scheduledDateRegex, '').trim();
-                        matched = true;
-                    }
+        const dueDateMatch = description.match(TasksUtil.TaskRegularExpressions.dueDateRegex);
+        if (dueDateMatch !== null) {
+            dueDate = window.moment(dueDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
+            description = description.replace(TasksUtil.TaskRegularExpressions.dueDateRegex, '').trim();
+            matched = true;
+        }
 
-                    const startDateMatch = description.match(TasksUtil.TaskRegularExpressions.startDateRegex);
-                    if (startDateMatch !== null) {
-                        startDate = window.moment(startDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
-                        description = description.replace(TasksUtil.TaskRegularExpressions.startDateRegex, '').trim();
-                        matched = true;
-                    }
+        const scheduledDateMatch = description.match(TasksUtil.TaskRegularExpressions.scheduledDateRegex);
+        if (scheduledDateMatch !== null) {
+            scheduledDate = window.moment(scheduledDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
+            description = description.replace(TasksUtil.TaskRegularExpressions.scheduledDateRegex, '').trim();
+            matched = true;
+        }
 
-                    const recurrenceMatch = description.match(TasksUtil.TaskRegularExpressions.recurrenceRegex);
-                    if (recurrenceMatch !== null) {
-                        // Save the recurrence rule, but *do not parse it yet*.
-                        // Creating the Recurrence object requires a reference date (e.g. a due date),
-                        // and it might appear in the next (earlier in the line) tokens to parse
-                        recurrenceRule = recurrenceMatch[1].trim();
-                        description = description.replace(TasksUtil.TaskRegularExpressions.recurrenceRegex, '').trim();
-                        matched = true;
-                    }
+        const startDateMatch = description.match(TasksUtil.TaskRegularExpressions.startDateRegex);
+        if (startDateMatch !== null) {
+            startDate = window.moment(startDateMatch[1], TasksUtil.TaskRegularExpressions.dateFormat);
+            description = description.replace(TasksUtil.TaskRegularExpressions.startDateRegex, '').trim();
+            matched = true;
+        }
 
-                    // Match tags from the end to allow users to mix the various task components with
-                    // tags. These tags will be added back to the description below
-                    const tagsMatch = description.match(TasksUtil.TaskRegularExpressions.hashTagsFromEnd);
-                    if (tagsMatch != null) {
-                        description = description.replace(TasksUtil.TaskRegularExpressions.hashTagsFromEnd, '').trim();
-                        matched = true;
-                        const tagName = tagsMatch[0].trim();
-                        // Adding to the left because the matching is done right-to-left
-                        trailingTags = trailingTags.length > 0 ? [tagName, trailingTags].join(' ') : tagName;
-                    }
+        const recurrenceMatch = description.match(TasksUtil.TaskRegularExpressions.recurrenceRegex);
+        if (recurrenceMatch !== null) {
+            recurrenceRule = recurrenceMatch[1].trim();
+            description = description.replace(TasksUtil.TaskRegularExpressions.recurrenceRegex, '').trim();
+            matched = true;
+        }
 
-                    runs++;
-                } while (matched && runs <= maxRuns);
+        const tagsMatch = description.match(TasksUtil.TaskRegularExpressions.hashTagsFromEnd);
+        if (tagsMatch != null) {
+            description = description.replace(TasksUtil.TaskRegularExpressions.hashTagsFromEnd, '').trim();
+            matched = true;
+            const tagName = tagsMatch[0].trim();
+            trailingTags = trailingTags.length > 0 ? [tagName, trailingTags].join(' ') : tagName;
+        }
 
+        runs++;
+    } while (matched && runs <= maxRuns);
 
-                // Add back any trailing tags to the description. We removed them so we can parse the rest of the
-                // components but now we want them back.
-                // The goal is for a task of them form 'Do something #tag1 (due) tomorrow #tag2 (start) today'
-                // to actually have the description 'Do something #tag1 #tag2'
-                if (trailingTags.length > 0) description += ' ' + trailingTags;
+    if (trailingTags.length > 0) description += ' ' + trailingTags;
 
-                const isTasksTask = [startDate, scheduledDate, dueDate, doneDate].some(d => !!d);
+    const isTasksTask = [startDate, scheduledDate, dueDate, doneDate].some(d => !!d);
 
-                itemValue.visual = description;
-                itemValue.priority = priority;
-                itemValue.recurrence = recurrenceRule;
-                itemValue.isTasksTask = isTasksTask;
-                itemValue.due = dueDate;
-                itemValue.scheduled = scheduledDate;
-                itemValue.completion = doneDate;
-                itemValue.start = startDate;
-                itemValue.checked = description.replace(' ', '').length !== 0;
+    item.visual = description;
+    item.priority = priority;
+    item.recurrence = recurrenceRule;
+    item.isTasksTask = isTasksTask;
+    item.due = dueDate;
+    item.scheduled = scheduledDate;
+    item.completion = doneDate;
+    item.start = startDate;
+    item.checked = description.replace(' ', '').length !== 0;
 
-                resolve(itemValue);
-            })
-            .catch(() => reject());
-    });
+    return item;
 }
 
-export async function dataviewTaskParser(item: Promise<TasksUtil.TaskDataModel>): Promise<TasksUtil.TaskDataModel> {
-    return new Promise((resolve, reject) => {
-        item
-            .then((itemValue) => {
-                let itemText = itemValue.visual || "";
-                const inlineFields = itemText.match(TasksUtil.TaskRegularExpressions.keyValueRegex);
-                if (!inlineFields) {
-                    resolve(itemValue);
-                    return;
-                }
-                for (const inlineField of inlineFields) {
-                    // this is necessary since every time RegEx.exec,
-                    // the lastIndex changed like an internal state.
-                    TasksUtil.TaskRegularExpressions.keyValueRegex.lastIndex = 0;
-                    const tkv = TasksUtil.TaskRegularExpressions.keyValueRegex.exec(inlineField)!;
-                    const [text, key, value] = [tkv[0], tkv[1], tkv[2]];
-                    itemText = itemText.replace(text, '');
+export function dataviewTaskParser(item: TasksUtil.TaskDataModel): TasksUtil.TaskDataModel {
+    let itemText = item.visual || "";
+    const inlineFields = itemText.match(TasksUtil.TaskRegularExpressions.keyValueRegex);
+    if (!inlineFields) {
+        return item;
+    }
+    for (const inlineField of inlineFields) {
+        TasksUtil.TaskRegularExpressions.keyValueRegex.lastIndex = 0;
+        const tkv = TasksUtil.TaskRegularExpressions.keyValueRegex.exec(inlineField)!;
+        const [text, key, value] = [tkv[0], tkv[1], tkv[2]];
+        itemText = itemText.replace(text, '');
 
-                    if (!TasksUtil.TaskStatusCollection.includes(key)) continue;
-                    const fieldDate = moment(value);
-                    if (!fieldDate.isValid()) {
-                        console.warn("Parse date for item failed, item: ")
-                        console.warn(inlineFields)
-                        continue;
-                    }
-                    switch (key) {
-                        case "due":
-                            itemValue.due = fieldDate; break;
-                        case "scheduled":
-                            itemValue.scheduled = fieldDate; break;
-                        case "complete":
-                        case "completion":
-                        case "done":
-                            itemValue.completion = fieldDate; break;
-                        case "created":
-                            itemValue.start = fieldDate; break;
-                        default:
-                            itemValue.dates.set(key, fieldDate); break;
-                    }
-                }
-                itemValue.visual = itemText;
-                resolve(itemValue);
-            })
-            .catch(() => reject());
-    });
+        if (!TasksUtil.TaskStatusCollection.includes(key)) continue;
+        const fieldDate = moment(value);
+        if (!fieldDate.isValid()) {
+            console.warn("Parse date for item failed, item: ", inlineFields);
+            continue;
+        }
+        switch (key) {
+            case "due":
+                item.due = fieldDate; break;
+            case "scheduled":
+                item.scheduled = fieldDate; break;
+            case "complete":
+            case "completion":
+            case "done":
+                item.completion = fieldDate; break;
+            case "created":
+                item.start = fieldDate; break;
+            default:
+                item.dates.set(key, fieldDate); break;
+        }
+    }
+    item.visual = itemText;
+    return item;
 }
 
 export function dailyNoteTaskParser(dailyNoteFormat: string = TasksUtil.innerDateFormat, dailyNoteFolder: string = '') {
-    return async (item: Promise<TasksUtil.TaskDataModel>): Promise<TasksUtil.TaskDataModel> => {
-        return new Promise((resolve, reject) => {
-            item
-                .then((itemValue) => {
-                    let dailyNoteDate;
-                    // 首先尝试使用完整路径解析日期（处理带路径的格式）
-                    const fullPath = itemValue.path.replace(/\\/g, '/'); // 统一路径分隔符
-                    
-                    // 处理 Daily Note Folder 前缀
-                    let pathToParse = fullPath;
-                    if (dailyNoteFolder) {
-                        // 移除可能的尾部斜杠
-                        const normalizedFolder = dailyNoteFolder.replace(/\/$/, '');
-                        // 如果路径以 Daily Note Folder 开头，移除这个前缀
-                        if (pathToParse.startsWith(normalizedFolder + '/')) {
-                            pathToParse = pathToParse.substring((normalizedFolder + '/').length);
-                        }
-                    }
-                    
-                    // 移除 .md 后缀
-                    if (pathToParse.endsWith('.md')) {
-                        pathToParse = pathToParse.substring(0, pathToParse.length - 3);
-                    }
-                    
-                    dailyNoteDate = moment(pathToParse, dailyNoteFormat, true);
-                    
-                    // 如果完整路径解析失败，再尝试使用文件名解析
-                    if (!dailyNoteDate.isValid()) {
-                        const taskFile: string = getFileTitle(itemValue.path);
-                        dailyNoteDate = moment(taskFile, dailyNoteFormat, true);
-                    }
-                    
-                    itemValue.dailyNote = dailyNoteDate.isValid();
-                    if (!itemValue.dailyNote) {
-                        resolve(itemValue);
-                        return;
-                    }
-                    if (!itemValue.start) itemValue.start = dailyNoteDate;
-                    if (!itemValue.scheduled) itemValue.scheduled = dailyNoteDate;
-                    if (!itemValue.created) itemValue.created = dailyNoteDate;
+    return (item: TasksUtil.TaskDataModel): TasksUtil.TaskDataModel => {
+        let dailyNoteDate: moment.Moment;
+        const fullPath = item.path.replace(/\\/g, '/');
+        
+        let pathToParse = fullPath;
+        if (dailyNoteFolder) {
+            const normalizedFolder = dailyNoteFolder.replace(/\/$/, '');
+            if (pathToParse.startsWith(normalizedFolder + '/')) {
+                pathToParse = pathToParse.substring((normalizedFolder + '/').length);
+            }
+        }
+        
+        if (pathToParse.endsWith('.md')) {
+            pathToParse = pathToParse.substring(0, pathToParse.length - 3);
+        }
+        
+        dailyNoteDate = moment(pathToParse, dailyNoteFormat, true);
+        
+        if (!dailyNoteDate.isValid()) {
+            const taskFile: string = getFileTitle(item.path);
+            dailyNoteDate = moment(taskFile, dailyNoteFormat, true);
+        }
+        
+        item.dailyNote = dailyNoteDate.isValid();
+        if (!item.dailyNote) {
+            return item;
+        }
+        if (!item.start) item.start = dailyNoteDate;
+        if (!item.scheduled) item.scheduled = dailyNoteDate;
+        if (!item.created) item.created = dailyNoteDate;
 
-                    resolve(itemValue);
-                })
-                .catch(() => reject());
-        })
+        return item;
     }
 }
 /**
@@ -311,38 +261,24 @@ export function taskLinkParser(item: TasksUtil.TaskDataModel) {
     return item;
 }
 
-export async function remainderParser(item: Promise<TasksUtil.TaskDataModel>): Promise<TasksUtil.TaskDataModel> {
-    return new Promise((resolve, reject) => {
-        item
-            .then((itemValue) => {
-                const match = itemValue.text.match(TasksUtil.TaskRegularExpressions.remainderRegex);
-                if (!match) { resolve(itemValue); return; }
-                itemValue.text = itemValue.text.replace(match[0], "");
-                resolve(itemValue);
-            })
-            .catch(() => reject());
-    });
+export function remainderParser(item: TasksUtil.TaskDataModel): TasksUtil.TaskDataModel {
+    const match = item.text.match(TasksUtil.TaskRegularExpressions.remainderRegex);
+    if (!match) { return item; }
+    item.text = item.text.replace(match[0], "");
+    return item;
 }
 
-export async function tagsParser(item: Promise<TasksUtil.TaskDataModel>): Promise<TasksUtil.TaskDataModel> {
-    return new Promise((resolve, reject) => {
-        item
-            .then((itemValue) => {
-                const match = itemValue.visual?.match(TasksUtil.TaskRegularExpressions.hashTags);
-                if (!match) {
-                    resolve(itemValue);
-                    return;
-                }
-                for (const m of match) {
-                    itemValue.visual = itemValue.visual?.replace(m, "");
-                    const tag = m.trim();
-                    itemValue.tags.push(tag);
-                }
-                resolve(itemValue);
-            })
-            .catch(() => reject());
-    })
-
+export function tagsParser(item: TasksUtil.TaskDataModel): TasksUtil.TaskDataModel {
+    const match = item.visual?.match(TasksUtil.TaskRegularExpressions.hashTags);
+    if (!match) {
+        return item;
+    }
+    for (const m of match) {
+        item.visual = item.visual?.replace(m, "");
+        const tag = m.trim();
+        item.tags.push(tag);
+    }
+    return item;
 }
 
 function dateBasedStatusParser(item: TasksUtil.TaskDataModel) {
@@ -395,16 +331,6 @@ function markerBasedStatusParser(item: TasksUtil.TaskDataModel) {
     return item;
 }
 
-export async function postProcessor(item: Promise<TasksUtil.TaskDataModel>): Promise<TasksUtil.TaskDataModel> {
-    //["overdue", "due", "scheduled", "start", "process", "unplanned","done","cancelled"]
-
-    //create ------------ scheduled ------- start --------- due --------- (done)
-    //        scheduled              start         process       overdue
-    return new Promise((resolve, reject) => {
-        item
-            .then((itemValue) => {
-                resolve(markerBasedStatusParser(itemValue));
-            })
-            .catch(() => reject());
-    });
+export function postProcessor(item: TasksUtil.TaskDataModel): TasksUtil.TaskDataModel {
+    return markerBasedStatusParser(item);
 }

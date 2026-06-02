@@ -40,7 +40,6 @@ export class TasksTimelineView extends BaseTasksView {
     }
 
     async onOpen(): Promise<void> {
-
         this.registerEvent(this.app.metadataCache.on('resolved', this.onReloadTasks));
         this.registerEvent(this.app.workspace.on("window-open", this.onReloadTasks));
 
@@ -51,8 +50,31 @@ export class TasksTimelineView extends BaseTasksView {
         this.root = createRoot(container);
         this.root.render(
             <ObsidianBridge plugin={this} userOptionModel={this.userOptionModel} taskListModel={this.taskListModel} />
-        )
+        );
 
+        await this.waitForMetadataCache();
+        await this.onReloadTasks();
+    }
+
+    private async waitForMetadataCache(maxWaitMs: number = 5000): Promise<void> {
+        const files = this.app.vault.getMarkdownFiles();
+        if (files.length === 0) return;
+
+        const allCached = files.every(file => this.app.metadataCache.getFileCache(file) !== null);
+        if (allCached) return;
+
+        const startTime = Date.now();
+        return new Promise(resolve => {
+            const checkCache = () => {
+                const nowAllCached = files.every(file => this.app.metadataCache.getFileCache(file) !== null);
+                if (nowAllCached || Date.now() - startTime > maxWaitMs) {
+                    resolve();
+                } else {
+                    setTimeout(checkCache, 100);
+                }
+            };
+            checkCache();
+        });
     }
 
     async onClose(): Promise<void> {
@@ -70,28 +92,30 @@ export class TasksTimelineView extends BaseTasksView {
             return;
         }
         this.isReloading = true;
-        const fileExcludeFilter = this.userOptionModel.get("excludePaths") || [];
-        const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
-        const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
-        const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
-        const adapter = new ObsidianTaskAdapter(this.app);
-        adapter.generateTasksList(fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter)
-            .then(() => {
-                const taskList = adapter.getTaskList();
-                const taskListPromise = this.parseTasks(taskList)
-                taskListPromise.then(tasks => {
-                    tasks = this.filterTasks(tasks);
-                    const taskfiles = this.userOptionModel.get("taskFiles");
-                    /*tasks.forEach(t => {
-                        if (taskfiles?.contains(t.path)) return;
-                        taskfiles?.push(t.path);
-                    })*/
-                    this.taskListModel.set({ taskList: tasks });
-                    this.userOptionModel.set({ taskFiles: taskfiles || [] });
-                }).catch(reason => { new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorParsingTasks + reason, 5000); throw reason; });
-            })
-            .catch(reason => { new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000); throw reason; })
-            .finally(() => this.isReloading = false);
+        
+        try {
+            const fileExcludeFilter = this.userOptionModel.get("excludePaths") || [];
+            const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
+            const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
+            const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+            
+            const adapter = new ObsidianTaskAdapter(this.app);
+            await adapter.generateTasksList(fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter);
+            
+            const taskList = adapter.getTaskList();
+            const tasks = await this.parseTasks(taskList);
+            const filteredTasks = this.filterTasks(tasks);
+            
+            const taskfiles = this.userOptionModel.get("taskFiles");
+            this.taskListModel.set({ taskList: filteredTasks });
+            this.userOptionModel.set({ taskFiles: taskfiles || [] });
+            
+        } catch (reason) {
+            new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
+            console.error("Error reloading tasks:", reason);
+        } finally {
+            this.isReloading = false;
+        }
     }
 
     filterTasks(taskList: TaskDataModel[]) {
@@ -136,19 +160,13 @@ export class TasksTimelineView extends BaseTasksView {
     }
 
     async parseTasks(taskList: TaskDataModel[]): Promise<TaskDataModel[]> {
-
         const stautsOrder = this.userOptionModel.get("taskStatusOrder");
-
         const dailyNoteFormatParser = TaskMapable.dailyNoteTaskParser(
             this.userOptionModel.get("dailyNoteFormat"),
             this.userOptionModel.get("dailyNoteFolder"));
-
-
         const forward = this.userOptionModel.get("forward");
-        /**
-         * initial parsers
-         */
-        let taskListPromise: Promise<TaskDataModel>[] = taskList.map(async item => item)
+
+        let processedTasks = taskList
             .map(TaskMapable.tasksPluginTaskParser)
             .map(TaskMapable.dataviewTaskParser)
             .map(dailyNoteFormatParser)
@@ -161,61 +179,42 @@ export class TasksTimelineView extends BaseTasksView {
              * Option Forward
              * Current behavior: show unplanned and overdue tasks in today's part.
              */
-            .map(async (task: Promise<TaskDataModel>): Promise<TaskDataModel> => {
-                return new Promise((resolve) => {
-                    task.then(t => {
-                        if (!forward) {
-                            resolve(t);
-                            return;
-                        }
-                        if (t.status === TaskStatus.unplanned) t.dates.set(TaskStatus.unplanned, moment())
-                        else if (t.status === TaskStatus.done && !t.completion &&
-                            !t.due && !t.start && !t.scheduled && !t.created) t.dates.set("done-unplanned", moment());
-                        else if (t.status === TaskStatus.overdue &&
-                            !TaskMapable.filterDate(moment())(t)) t.dates.set(TaskStatus.overdue, moment())
-                        resolve(t);
-                    })
-                })
+            .map((task: TaskDataModel): TaskDataModel => {
+                if (!forward) return task;
+                if (task.status === TaskStatus.unplanned) {
+                    task.dates.set(TaskStatus.unplanned, moment());
+                } else if (task.status === TaskStatus.done && !task.completion &&
+                    !task.due && !task.start && !task.scheduled && !task.created) {
+                    task.dates.set("done-unplanned", moment());
+                } else if (task.status === TaskStatus.overdue &&
+                    !TaskMapable.filterDate(moment())(task)) {
+                    task.dates.set(TaskStatus.overdue, moment());
+                }
+                return task;
             })
             /**
              * Post processer
              */
-            .map((task: Promise<TaskDataModel>) => {
-                return new Promise(resolve => {
-                    task.then(t => {
-                        if (!stautsOrder) {
-                            resolve(t);
-                            return;
-                        }
-                        if (!stautsOrder.includes(t.status)) return t;
-                        t.order = stautsOrder.indexOf(t.status) + 1;
-                        resolve(t);
-                    });
-                });
+            .map((task: TaskDataModel): TaskDataModel => {
+                if (!stautsOrder) return task;
+                if (stautsOrder.includes(task.status)) {
+                    task.order = stautsOrder.indexOf(task.status) + 1;
+                }
+                return task;
             });
 
         if (this.userOptionModel.get("convert24HourTimePrefix")) {
-            taskListPromise = taskListPromise.map((task: Promise<TaskDataModel>) => {
-                return new Promise(resolve => {
-                    task.then(t => {
-                        if (!t.visual || t.visual.length < 5) {
-                            resolve(t);
-                            return;
-                        }
-                        const timePrefix = moment(t.visual.substring(0, 5), "HH:mm", true);
-                        if (!timePrefix.isValid()) {
-                            resolve(t);
-                            return;
-                        }
-                        const updatedTimePrefix = timePrefix.format("h:mm a");
-                        t.visual = updatedTimePrefix + t.visual.substring(5);
-                        resolve(t);
-                    });
-                });
+            processedTasks = processedTasks.map((task: TaskDataModel): TaskDataModel => {
+                if (!task.visual || task.visual.length < 5) return task;
+                const timePrefix = moment(task.visual.substring(0, 5), "HH:mm", true);
+                if (!timePrefix.isValid()) return task;
+                const updatedTimePrefix = timePrefix.format("h:mm a");
+                task.visual = updatedTimePrefix + task.visual.substring(5);
+                return task;
             });
         }
 
-        return Promise.all(taskListPromise);
+        return processedTasks;
     }
 
     getViewType(): string {
