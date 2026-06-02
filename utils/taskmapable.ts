@@ -326,7 +326,7 @@ function dateBasedStatusParser(item: TasksUtil.TaskDataModel) {
 }
 
 function markerBasedStatusParser(item: TasksUtil.TaskDataModel) {
-    if (!Object.keys(TasksUtil.TaskStatusMarkerMap).contains(item.status)) return dateBasedStatusParser(item);
+    if (!Object.keys(TasksUtil.TaskStatusMarkerMap).includes(item.status)) return dateBasedStatusParser(item);
     item.status = (TasksUtil.TaskStatusMarkerMap as any)[item.status];
     return item;
 }

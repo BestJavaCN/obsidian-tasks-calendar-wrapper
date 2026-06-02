@@ -12,11 +12,20 @@ export class ObsidianTaskAdapter {
         this.getTaskList = this.getTaskList.bind(this);
         this.fromItemCache = this.fromItemCache.bind(this);
         this.fromLine = this.fromLine.bind(this);
+        this.updateFileTasks = this.updateFileTasks.bind(this);
 
     }
 
     getTaskList() {
         return [...this.tasksList];
+    }
+
+    private fileMatchesFilters(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]): boolean {
+        if (includeFilter.length !== 0 && !this.includePathsFilter(includeFilter)(file)) return false;
+        if (pathFilter.length !== 0 && !this.pathsFilter(pathFilter)(file)) return false;
+        if (includeTags.length !== 0 && !this.fileIncludeTagsFilter(includeTags)(file)) return false;
+        if (excludeTags.length !== 0 && !this.fileExcludeTagsFilter(excludeTags)(file)) return false;
+        return true;
     }
 
     pathsFilter(filter: string[]) {
@@ -61,6 +70,20 @@ export class ObsidianTaskAdapter {
         }
     }
 
+    private async parseFileIntoTarget(file: TFile, targetArray: TaskDataModel[]) {
+        const link = Link.file(file.path);
+        try {
+            const content = await this.app.vault.cachedRead(file);
+            await this.waitForFileCache(file);
+            const cache = this.app.metadataCache.getFileCache(file);
+            cache?.listItems?.forEach(
+                this.fromItemCache(link, file.path, content, cache.sections, cache.links, cache.frontmatter, cache.tags, targetArray)
+            );
+        } catch (reason) {
+            console.error("Read file from obsidian cache failed: " + reason);
+        }
+    }
+
     async generateTasksList(includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
         this.tasksList.length = 0;
         const files = this.app.vault.getMarkdownFiles()
@@ -75,18 +98,30 @@ export class ObsidianTaskAdapter {
             filteredFiles = filteredFiles.filter(this.fileExcludeTagsFilter(excludeTags));
 
         await Promise.all(filteredFiles.map(async (file: TFile) => {
-            const link = Link.file(file.path);
-            try {
-                const content = await this.app.vault.cachedRead(file);
-                await this.waitForFileCache(file);
-                const cache = this.app.metadataCache.getFileCache(file);
-                cache?.listItems?.forEach(
-                    this.fromItemCache(link, file.path, content, cache.sections, cache.links, cache.frontmatter, cache.tags)
-                );
-            } catch (reason) {
-                console.error("Read file from obsidian cache failed: " + reason);
-            }
+            await this.parseFileIntoTarget(file, this.tasksList);
         }));
+    }
+
+    /**
+     * 增量更新单个文件的任务：移除该文件旧任务，重新解析并加入新任务。
+     * 如果文件不匹配当前过滤条件，则仅移除旧任务。
+     */
+    async updateFileTasks(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
+        // 移除该文件的旧任务
+        this.tasksList = this.tasksList.filter(t => t.path !== file.path);
+
+        if (!this.fileMatchesFilters(file, includeFilter, pathFilter, includeTags, excludeTags)) return;
+
+        const newTasks: TaskDataModel[] = [];
+        await this.parseFileIntoTarget(file, newTasks);
+        this.tasksList.push(...newTasks);
+    }
+
+    /**
+     * 文件被删除时，移除该文件对应的所有任务
+     */
+    removeFileTasks(filePath: string) {
+        this.tasksList = this.tasksList.filter(t => t.path !== filePath);
     }
 
     private async waitForFileCache(file: TFile, timeoutMs: number = 5000): Promise<void> {
@@ -119,7 +154,8 @@ export class ObsidianTaskAdapter {
      * @returns This funcion directly modify this.taskList. 
      */
     private fromItemCache(link: Link, filePath: string, fileContent: string,
-        sections?: SectionCache[], links?: LinkCache[], fontmatter?: FrontMatterCache, tagsCache?: TagCache[]) {
+        sections?: SectionCache[], links?: LinkCache[], fontmatter?: FrontMatterCache, tagsCache?: TagCache[],
+        targetArray?: TaskDataModel[]) {
         return (item: ListItemCache) => {
             if (!(item.task)) return null;
             const itemPos = item.position;
@@ -170,7 +206,7 @@ export class ObsidianTaskAdapter {
 
             const taskItem = this.fromLine(itemText, filePath, parentLink, itemPos, outLinkLinks, fontmatter, tags || []);
             if (taskItem) {
-                this.tasksList.push(taskItem);
+                (targetArray || this.tasksList).push(taskItem);
             }
         }
     }
