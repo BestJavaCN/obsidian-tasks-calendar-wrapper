@@ -6,15 +6,18 @@ import * as TaskMapable from '../../../utils/taskmapable';
 import { innerDateFormat, TaskDataModel, TaskStatus } from '../../../utils/tasks';
 import { TaskListContext, TodayFocusEventHandlersContext, UserOptionContext } from './context';
 import { YearView } from './yearview';
+import { TaskItemView } from './taskitemview';
 
 
 const defaultTimelineProps = {
     userOptions: {} as UserOption,
-    taskList: [] as TaskDataModel[]
+    taskList: [] as TaskDataModel[],
+    specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
 }
 const defaultTimelineStates = {
     filter: "" as string,
     todayFocus: false as boolean,
+    activeSpecificTaskFile: "" as string,
 }
 type TimelineProps = Readonly<typeof defaultTimelineProps>;
 type TimelineStates = typeof defaultTimelineStates;
@@ -44,6 +47,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
 
         this.handleCounterFilterClick = this.handleCounterFilterClick.bind(this);
         this.handleTodayFocus = this.handleTodayFocus.bind(this);
+        this.handleSpecificTaskFileClick = this.handleSpecificTaskFileClick.bind(this);
 
         this.counterClickHandlers = {
             todoFilter: () => this.handleCounterFilterClick('todoFilter'),
@@ -54,6 +58,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         this.state = {
             filter: this.props.userOptions.defaultFilters,
             todayFocus: this.props.userOptions.defaultTodayFocus,
+            activeSpecificTaskFile: "",
         }
     }
 
@@ -62,6 +67,14 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
             this.setState({ filter: filterName });
         } else {
             this.setState({ filter: "" });
+        }
+    }
+
+    handleSpecificTaskFileClick(alias: string) {
+        if (this.state.activeSpecificTaskFile !== alias) {
+            this.setState({ activeSpecificTaskFile: alias });
+        } else {
+            this.setState({ activeSpecificTaskFile: "" });
         }
     }
 
@@ -150,6 +163,15 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         if (userOptions.dailyNoteFormat && userOptions.dailyNoteFormat !== '')
             quickEntryFiles.push(dailyNoteFolder + dailyNoteFileName);
 
+        // Add specific task files to quick entry panel
+        if (userOptions.useSpecificTaskFiles && userOptions.specificTaskFiles) {
+            for (const stf of userOptions.specificTaskFiles) {
+                if (stf.enabled && stf.path && !quickEntryFiles.includes(stf.path)) {
+                    quickEntryFiles.push(stf.path);
+                }
+            }
+        }
+
         return {
             sortedDates,
             firstDay,
@@ -191,6 +213,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                 useBuiltinStyle: userOptions.useBuiltinStyle,
                 language: userOptions.language,
                 counters: [] as Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }>,
+                specificTaskFileData: this.props.specificTaskFileData || [],
             },
             taskListContexts: years.map(y => ({
                 year: y,
@@ -225,6 +248,12 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
             this.state.filter + " " + this.props.userOptions.counterBehavior;
         const todayFocus = this.state.todayFocus ? "todayFocus" : "";
 
+        const specificTaskFileData = this.props.specificTaskFileData || [];
+        const activeSpecificTaskFile = this.state.activeSpecificTaskFile;
+        const activeSpecificTasks = activeSpecificTaskFile
+            ? (specificTaskFileData.find(d => d.alias === activeSpecificTaskFile)?.tasks || [])
+            : [];
+
         return (
             <div className={`taskido ${derived.styles} ${counterFilter} ${todayFocus}`}
                 id={`taskido${(new Date()).getTime()}`}>
@@ -237,8 +266,82 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                                 </TaskListContext.Provider>
                             ))}
                         </span>
+                        {specificTaskFileData.length > 0 && (
+                            <SpecificTaskFilePanels
+                                data={specificTaskFileData}
+                                activeAlias={activeSpecificTaskFile}
+                                onPanelClick={this.handleSpecificTaskFileClick}
+                            />
+                        )}
+                        {activeSpecificTasks.length > 0 && (
+                            <SpecificTaskFileContent
+                                alias={activeSpecificTaskFile}
+                                tasks={activeSpecificTasks}
+                            />
+                        )}
                     </UserOptionContext.Provider>
                 </TodayFocusEventHandlersContext.Provider>
             </div >)
+    }
+}
+
+// Specific Task File Panels Component
+interface SpecificTaskFilePanelsProps {
+    data: Array<{ alias: string; tasks: TaskDataModel[] }>;
+    activeAlias: string;
+    onPanelClick: (alias: string) => void;
+}
+
+class SpecificTaskFilePanels extends React.Component<SpecificTaskFilePanelsProps> {
+    render(): React.ReactNode {
+        const { data, activeAlias, onPanelClick } = this.props;
+        return (
+            <div className="specific-task-file-panels">
+                <div className="counters">
+                    {data.map((item, i) => (
+                        <div
+                            className={`counter specific-task-counter${activeAlias === item.alias ? ' active' : ''}`}
+                            key={i}
+                            id={`stf-${item.alias}`}
+                            onClick={() => onPanelClick(item.alias)}
+                        >
+                            <div className="count">{item.tasks.length}</div>
+                            <div className="label">{item.alias}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+}
+
+// Specific Task File Content Component
+interface SpecificTaskFileContentProps {
+    alias: string;
+    tasks: TaskDataModel[];
+}
+
+class SpecificTaskFileContent extends React.Component<SpecificTaskFileContentProps> {
+    render(): React.ReactNode {
+        const { alias, tasks } = this.props;
+        return (
+            <div className="specific-task-file-content">
+                <div className="specific-task-file-header">
+                    <div className="dateLine">
+                        <div className="date">{alias}</div>
+                        <div className="weekday">{tasks.length} tasks</div>
+                    </div>
+                </div>
+                <div className="details">
+                    <div className="content">
+                        <TaskListContext.Provider value={{ taskList: tasks, entryOnDate: "", involvedDates: [] }}>
+                            {tasks.map((t, i) => (
+                                <TaskItemView key={i} taskItem={t} />
+                            ))}
+                        </TaskListContext.Provider>
+                    </div>
+                </div>
+            </div>
+        );
     }
 }

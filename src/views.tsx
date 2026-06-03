@@ -5,7 +5,7 @@ import { ObsidianTaskAdapter } from "Obsidian-Tasks-Timeline/src/taskadapter";
 import { createRoot, Root } from 'react-dom/client';
 import * as TaskMapable from 'utils/taskmapable';
 import { TaskDataModel, TaskStatus, TaskStatusMarkerMap, TaskRegularExpressions } from "utils/tasks";
-import { defaultUserOptions, UserOption } from "./settings";
+import { defaultUserOptions, SpecificTaskFile, UserOption } from "./settings";
 import { t } from "./i18n";
 
 
@@ -24,6 +24,7 @@ export abstract class BaseTasksView extends ItemView {
 export class TasksTimelineView extends BaseTasksView {
     private taskListModel = new Model({
         taskList: [] as TaskDataModel[],
+        specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
     });
 
     private isReloading: boolean = false;
@@ -225,8 +226,30 @@ export class TasksTimelineView extends BaseTasksView {
             const unchangedTasks = taskList.filter(t => !changedFilePaths.has(t.path));
 
             const parsedChangedTasks = await this.parseTasks(changedTasks);
+
+            // Handle specific task files on incremental update
+            const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+            let specificFilePaths: Set<string> = new Set();
+            if (useSpecificTaskFiles) {
+                const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
+                if (specificTaskFiles && specificTaskFiles.length > 0) {
+                    specificFilePaths = new Set(specificTaskFiles.filter(f => f.enabled && f.path).map(f => f.path));
+                    await this.incrementalSpecificTaskFileUpdate(specificTaskFiles, changedFilePaths, changedTasks);
+                }
+            }
+
             const allTasks = [...unchangedTasks, ...parsedChangedTasks];
-            const filteredTasks = this.filterTasks(allTasks);
+            let filteredTasks = this.filterTasks(allTasks);
+
+            // Exclude non-overdue tasks from specific task files from the main task list
+            if (useSpecificTaskFiles && specificFilePaths.size > 0) {
+                filteredTasks = filteredTasks.filter(t => {
+                    if (specificFilePaths.has(t.path)) {
+                        return t.status === TaskStatus.overdue;
+                    }
+                    return true;
+                });
+            }
 
             this.taskListModel.set({ taskList: filteredTasks });
             this.rebuildTaskStatusMap();
@@ -286,11 +309,34 @@ export class TasksTimelineView extends BaseTasksView {
             await adapter.generateTasksList(fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter);
 
             const taskList = adapter.getTaskList();
-            const tasks = await this.parseTasks(taskList);
-            const filteredTasks = this.filterTasks(tasks);
+            const specificTaskFileTasks = await this.parseSpecificTaskFiles();
+            const specificFilePaths = new Set<string>();
+            for (const entry of specificTaskFileTasks) {
+                specificFilePaths.add(entry.path);
+            }
+
+            const allTasks = [...taskList, ...specificTaskFileTasks];
+            const tasks = await this.parseTasks(allTasks);
+            let filteredTasks = this.filterTasks(tasks);
+
+            // Exclude non-overdue tasks from specific task files from the main task list
+            // Overdue tasks from specific task files should still appear in the Overdue panel
+            filteredTasks = filteredTasks.filter(t => {
+                if (specificFilePaths.has(t.path)) {
+                    // Only keep overdue tasks from specific task files in the main list
+                    return t.status === TaskStatus.overdue;
+                }
+                return true;
+            });
+
+            // Build the specific task file data for display
+            const specificTaskFileData = await this.buildSpecificTaskFileData(specificTaskFileTasks);
 
             const taskfiles = this.userOptionModel.get("taskFiles");
-            this.taskListModel.set({ taskList: filteredTasks });
+            this.taskListModel.set({
+                taskList: filteredTasks,
+                specificTaskFileData: specificTaskFileData,
+            });
             this.rebuildTaskStatusMap();
             this.userOptionModel.set({ taskFiles: taskfiles || [] });
 
@@ -300,6 +346,133 @@ export class TasksTimelineView extends BaseTasksView {
         } finally {
             this.isReloading = false;
         }
+    }
+
+    /**
+     * Parse all enabled specific task files, bypassing include/exclude path filters.
+     * Returns raw task data (before status/date parsing).
+     */
+    private async parseSpecificTaskFiles(): Promise<TaskDataModel[]> {
+        const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
+        if (!useSpecificTaskFiles || !specificTaskFiles || specificTaskFiles.length === 0) {
+            return [];
+        }
+
+        const enabledFiles = specificTaskFiles.filter(f => f.enabled && f.path);
+        if (enabledFiles.length === 0) return [];
+
+        if (!this.adapter) {
+            this.adapter = new ObsidianTaskAdapter(this.app);
+        }
+        const result: TaskDataModel[] = [];
+
+        for (const stf of enabledFiles) {
+            const file = this.app.vault.getAbstractFileByPath(stf.path);
+            if (!(file instanceof TFile)) continue;
+            try {
+                await this.adapter.parseSingleFileIntoTarget(file, result);
+            } catch (e) {
+                console.error(`Error parsing specific task file ${stf.path}:`, e);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Build the specific task file data structure for display panels.
+     * Groups tasks by alias and filters out completed/cancelled tasks.
+     */
+    private async buildSpecificTaskFileData(specificTaskFileTasks: TaskDataModel[]): Promise<Array<{ alias: string; tasks: TaskDataModel[] }>> {
+        const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
+        if (!specificTaskFiles || specificTaskFiles.length === 0) return [];
+
+        const enabledFiles = specificTaskFiles.filter(f => f.enabled && f.path);
+        const result: Array<{ alias: string; tasks: TaskDataModel[] }> = [];
+
+        for (const stf of enabledFiles) {
+            const fileTasks = specificTaskFileTasks.filter(t => t.path === stf.path);
+            // Parse the tasks (date, status, etc.)
+            const parsedTasks = await this.parseTasks(fileTasks);
+            // Filter out completed/cancelled tasks
+            const activeTasks = parsedTasks.filter(t => {
+                const hideStatus = this.userOptionModel.get("hideStatusTasks") || [];
+                if (hideStatus.includes(t.statusMarker)) return false;
+                if (hideStatus.some(m => TaskStatusMarkerMap[m as keyof typeof TaskStatusMarkerMap] === t.status)) return false;
+                return true;
+            });
+            // Sort tasks
+            const sortFn = this.getSortFunction();
+            activeTasks.sort(sortFn);
+
+            result.push({
+                alias: stf.alias || stf.path,
+                tasks: activeTasks,
+            });
+        }
+
+        return result;
+    }
+
+    private getSortFunction(): (a: TaskDataModel, b: TaskDataModel) => number {
+        const sortStr = this.userOptionModel.get("sort") as string;
+        try {
+            // eslint-disable-next-line no-new-func
+            return new Function(`return ${sortStr}`)() as (a: TaskDataModel, b: TaskDataModel) => number;
+        } catch {
+            return (t1, t2) => t1.order <= t2.order ? -1 : 1;
+        }
+    }
+
+    /**
+     * Incrementally update specific task file data when files change.
+     * Re-parses only the specific task files that were changed.
+     */
+    private async incrementalSpecificTaskFileUpdate(
+        specificTaskFiles: SpecificTaskFile[],
+        changedFilePaths: Set<string>,
+        changedTasks: TaskDataModel[]
+    ): Promise<void> {
+        if (!this.adapter) {
+            this.adapter = new ObsidianTaskAdapter(this.app);
+        }
+        const enabledFiles = specificTaskFiles.filter(f => f.enabled && f.path);
+        const changedSpecificFiles = enabledFiles.filter(f => changedFilePaths.has(f.path));
+
+        if (changedSpecificFiles.length === 0) return;
+
+        // Re-parse all changed specific task files
+        const specificTaskFileTasks: TaskDataModel[] = [];
+        for (const stf of changedSpecificFiles) {
+            const file = this.app.vault.getAbstractFileByPath(stf.path);
+            if (!(file instanceof TFile)) continue;
+            try {
+                await this.adapter.parseSingleFileIntoTarget(file, specificTaskFileTasks);
+            } catch (e) {
+                console.error(`Error parsing specific task file ${stf.path}:`, e);
+            }
+        }
+
+        // Build specific task file data
+        const specificTaskFileData = await this.buildSpecificTaskFileData(specificTaskFileTasks);
+
+        // Update the task list model
+        const currentData = this.taskListModel.get("specificTaskFileData") as Array<{ alias: string; tasks: TaskDataModel[] }> || [];
+        const mergedData = [...currentData];
+        for (const newData of specificTaskFileData) {
+            const idx = mergedData.findIndex(d => d.alias === newData.alias);
+            if (idx >= 0) {
+                mergedData[idx] = newData;
+            } else {
+                mergedData.push(newData);
+            }
+        }
+
+        this.taskListModel.set({
+            specificTaskFileData: mergedData,
+            taskList: this.taskListModel.get("taskList"),
+        }, { silent: true });
     }
 
     /**

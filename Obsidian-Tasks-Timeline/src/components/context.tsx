@@ -20,6 +20,7 @@ export const UserOptionContext = React.createContext({
     forward: false as boolean,
     useBuiltinStyle: true as boolean,
     language: "en" as string,
+    specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
 });
 
 export const QuickEntryHandlerContext = React.createContext({

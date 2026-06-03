@@ -61,11 +61,12 @@ class CreateFileModal extends Modal {
 const defaultObsidianBridgeProps = {
     plugin: {} as ItemView,
     userOptionModel: new Model({ ...defaultUserOptions }) as Model,
-    taskListModel: new Model({ taskList: [] as TaskDataModel[] }) as Model,
+    taskListModel: new Model({ taskList: [] as TaskDataModel[], specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }> }) as Model,
 }
 const defaultObsidianBridgeState = {
     taskList: [] as TaskDataModel[],
     userOptions: defaultUserOptions as UserOption,
+    specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
 }
 type ObsidianBridgeProps = Readonly<typeof defaultObsidianBridgeProps>;
 type ObsidianBridgeState = typeof defaultObsidianBridgeState;
@@ -91,6 +92,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
         this.state = {
             userOptions: { ...(this.props.userOptionModel.pick(this.props.userOptionModel.keys()) as UserOption) },
             taskList: this.props.taskListModel.get("taskList"),
+            specificTaskFileData: this.props.taskListModel.get("specificTaskFileData") || [],
         }
     }
 
@@ -114,6 +116,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
     onUpdateTasks() {
         this.setState({
             taskList: this.props.taskListModel.get("taskList"),
+            specificTaskFileData: this.props.taskListModel.get("specificTaskFileData") || [],
         })
     }
 
@@ -371,7 +374,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                     //@ts-ignore
                     handleModifyTask: this.app.plugins.plugins['obsidian-tasks-plugin'] === undefined ? undefined : this.handleModifyTask,
                 }}>
-                    <TimelineView userOptions={this.state.userOptions} taskList={this.state.taskList} />
+                    <TimelineView userOptions={this.state.userOptions} taskList={this.state.taskList} specificTaskFileData={this.state.specificTaskFileData} />
                 </TaskItemEventHandlersContext.Provider>
             </QuickEntryHandlerContext.Provider>
         )

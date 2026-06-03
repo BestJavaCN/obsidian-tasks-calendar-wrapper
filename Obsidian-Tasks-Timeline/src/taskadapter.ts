@@ -84,6 +84,14 @@ export class ObsidianTaskAdapter {
         }
     }
 
+    /**
+     * Parse a single file into the target array without any path filters.
+     * Used by specific task files feature to bypass include/exclude path settings.
+     */
+    async parseSingleFileIntoTarget(file: TFile, targetArray: TaskDataModel[]) {
+        await this.parseFileIntoTarget(file, targetArray);
+    }
+
     async generateTasksList(includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
         this.tasksList.length = 0;
         const files = this.app.vault.getMarkdownFiles();

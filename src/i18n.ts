@@ -87,6 +87,18 @@ export interface Translations {
     filterEmpty: string;
     filterEmptyDesc: string;
 
+    // Specific task files
+    useSpecificTaskFiles: string;
+    useSpecificTaskFilesDesc: string;
+    addSpecificTaskFile: string;
+    specificTaskFileAlias: string;
+    specificTaskFileAliasDesc: string;
+    specificTaskFilePath: string;
+    specificTaskFilePathDesc: string;
+    enableSpecificTaskFile: string;
+    removeSpecificTaskFile: string;
+    noSpecificTaskFiles: string;
+
     // Language setting
     language: string;
     languageDesc: string;
@@ -275,6 +287,17 @@ const en: Translations = {
     filterEmpty: "Filter Empty",
     filterEmptyDesc: "Filter empty items out or not. If not, the raw text will be displayed.",
 
+    useSpecificTaskFiles: "Enable Specific Task Files",
+    useSpecificTaskFilesDesc: "Enable specific task files feature. This allows you to bypass include/exclude path settings and specify individual files to read tasks from.",
+    addSpecificTaskFile: "Add Specific Task File",
+    specificTaskFileAlias: "Alias",
+    specificTaskFileAliasDesc: "The display name for this task file panel.",
+    specificTaskFilePath: "File Path",
+    specificTaskFilePathDesc: "The path to the markdown file.",
+    enableSpecificTaskFile: "Enable",
+    removeSpecificTaskFile: "Remove",
+    noSpecificTaskFiles: "No specific task files configured.",
+
     language: "Language",
     languageDesc: "Select the display language of the plugin.",
 
@@ -452,6 +475,17 @@ const zh: Translations = {
     includePathsDesc: "只包含匹配特定路径（文件夹、文件）的任务。\n<p style=color:red;>注意：不需要前缀或末尾的 '/'，除非您要过滤整个仓库。</p>",
     filterEmpty: "过滤空任务",
     filterEmptyDesc: "是否过滤掉空任务项。如果不过滤，将显示空任务的原始文本。",
+
+    useSpecificTaskFiles: "启用特定任务文件",
+    useSpecificTaskFilesDesc: "启用特定任务文件功能。此功能允许您绕过包含/排除路径设置，直接指定特定文件来读取任务。",
+    addSpecificTaskFile: "添加特定任务文件",
+    specificTaskFileAlias: "别名",
+    specificTaskFileAliasDesc: "此任务文件面板的显示名称。",
+    specificTaskFilePath: "文件路径",
+    specificTaskFilePathDesc: "Markdown 文件的路径。",
+    enableSpecificTaskFile: "启用",
+    removeSpecificTaskFile: "删除",
+    noSpecificTaskFiles: "未配置特定任务文件。",
 
     language: "语言",
     languageDesc: "选择插件的显示语言。",

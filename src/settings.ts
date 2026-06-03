@@ -3,6 +3,12 @@ import { TaskRegularExpressions } from "utils/tasks";
 import TasksCalendarWrapper from "./main";
 import { t, Language, formatTagExists } from "./i18n";
 
+export interface SpecificTaskFile {
+    alias: string;
+    path: string;
+    enabled: boolean;
+}
+
 function getSortOptions(lang: Language): Record<string, string> {
     const tr = t(lang);
     return {
@@ -196,6 +202,14 @@ export const defaultUserOptions = {
 	 * Display language: "en" for English, "zh" for Chinese
 	 */
 	language: "en" as Language,
+	/**
+	 * Use specific task files feature
+	 */
+	useSpecificTaskFiles: false as boolean,
+	/**
+	 * Specific task files list
+	 */
+	specificTaskFiles: [] as SpecificTaskFile[],
 };
 export type UserOption = typeof defaultUserOptions;
 
@@ -707,6 +721,95 @@ export class TasksCalendarSettingTab extends PluginSettingTab {
                     await this.onOptionUpdate({ language: v as Language }, true);
                 });
             })
+
+        // Specific Task Files
+        containerEl.createEl("h2", { text: tr.useSpecificTaskFiles });
+
+        new Setting(containerEl)
+            .setName(tr.useSpecificTaskFiles)
+            .setDesc(tr.useSpecificTaskFilesDesc)
+            .addToggle(async tg => {
+                tg.setValue(this.plugin.userOptions.useSpecificTaskFiles);
+                tg.onChange(async v => {
+                    await this.onOptionUpdate({ useSpecificTaskFiles: v }, true);
+                });
+            });
+
+        if (this.plugin.userOptions.useSpecificTaskFiles) {
+            const specificTaskFilesDiv = containerEl.createDiv();
+            this.renderSpecificTaskFiles(specificTaskFilesDiv);
+        }
+    }
+
+    private renderSpecificTaskFiles(containerEl: HTMLElement) {
+        const tr = t(this.plugin.userOptions.language);
+        const specificTaskFiles = this.plugin.userOptions.specificTaskFiles;
+
+        specificTaskFiles.forEach((stf, index) => {
+            const itemDiv = containerEl.createDiv({ cls: "specific-task-file-item" });
+            itemDiv.style.border = "1px solid var(--background-modifier-border)";
+            itemDiv.style.borderRadius = "8px";
+            itemDiv.style.padding = "10px";
+            itemDiv.style.marginBottom = "10px";
+
+            new Setting(itemDiv)
+                .setName(tr.specificTaskFileAlias)
+                .setDesc(tr.specificTaskFileAliasDesc)
+                .addText(t => {
+                    t.setValue(stf.alias);
+                    t.onChange(async v => {
+                        this.plugin.userOptions.specificTaskFiles[index].alias = v;
+                        await this.onOptionUpdate({}, false);
+                    });
+                });
+
+            new Setting(itemDiv)
+                .setName(tr.specificTaskFilePath)
+                .setDesc(tr.specificTaskFilePathDesc)
+                .addText(t => {
+                    t.setValue(stf.path);
+                    t.onChange(async v => {
+                        this.plugin.userOptions.specificTaskFiles[index].path = v.trim();
+                        await this.onOptionUpdate({}, false);
+                    });
+                });
+
+            new Setting(itemDiv)
+                .setName(tr.enableSpecificTaskFile)
+                .addToggle(tg => {
+                    tg.setValue(stf.enabled);
+                    tg.onChange(async v => {
+                        this.plugin.userOptions.specificTaskFiles[index].enabled = v;
+                        await this.onOptionUpdate({}, false);
+                    });
+                })
+                .addExtraButton(btn => {
+                    btn.setIcon("trash")
+                        .setTooltip(tr.removeSpecificTaskFile)
+                        .onClick(async () => {
+                            this.plugin.userOptions.specificTaskFiles.splice(index, 1);
+                            await this.onOptionUpdate({}, true);
+                        });
+                });
+        });
+
+        new Setting(containerEl)
+            .addButton(btn => {
+                btn.setIcon("plus-with-circle")
+                    .setButtonText(tr.addSpecificTaskFile)
+                    .onClick(async () => {
+                        this.plugin.userOptions.specificTaskFiles.push({
+                            alias: "",
+                            path: "",
+                            enabled: false,
+                        });
+                        await this.onOptionUpdate({}, true);
+                    });
+            });
+
+        if (specificTaskFiles.length === 0) {
+            containerEl.createEl("p", { text: tr.noSpecificTaskFiles, cls: "setting-item-description" });
+        }
     }
 
     private tagsSettingItem = (

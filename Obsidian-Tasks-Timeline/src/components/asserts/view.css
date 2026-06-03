@@ -64,6 +64,23 @@
 	box-shadow: var(--input-shadow);
 	cursor: pointer;
 }
+.taskido .counter.active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+.taskido .specific-task-file-panels {
+	margin-top: 10px;
+}
+.taskido .specific-task-file-content {
+	margin: 10px 5px;
+	padding: 10px;
+	border-radius: 10px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+}
+.taskido .specific-task-file-content .dateLine {
+	margin: 0 0 10px 0;
+}
 .taskido .count {
 	font-size: 18px;
 	font-weight: normal;
