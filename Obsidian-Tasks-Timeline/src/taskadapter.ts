@@ -1,4 +1,4 @@
-import { App, FrontMatterCache, LinkCache, ListItemCache, Pos, SectionCache, TagCache, TFile } from "obsidian";
+import { App, CachedMetadata, FrontMatterCache, LinkCache, ListItemCache, Pos, SectionCache, TagCache, TFile } from "obsidian";
 import { Link } from "../../dataview-util/markdown";
 import { TaskDataModel, TaskRegularExpressions } from "../../utils/tasks";
 
@@ -126,6 +126,32 @@ export class ObsidianTaskAdapter {
 
         const newTasks: TaskDataModel[] = [];
         await this.parseFileIntoTarget(file, newTasks);
+        this.tasksList.push(...newTasks);
+    }
+
+    /**
+     * 同步方法：利用 metadataCache.on('changed') 回调提供的 data 和 cache，
+     * 直接从内存中提取该文件的任务，无需任何文件 I/O。
+     * 仅用于增量更新路径，不检查文件级过滤条件（由调用方保证）。
+     */
+    extractTasksFromCache(filePath: string, data: string, cache: CachedMetadata): TaskDataModel[] {
+        const tasks: TaskDataModel[] = [];
+        const link = Link.file(filePath);
+        cache?.listItems?.forEach(
+            this.fromItemCache(link, filePath, data, cache.sections, cache.links, cache.frontmatter, cache.tags, tasks)
+        );
+        return tasks;
+    }
+
+    /**
+     * 增量更新路径的快速入口：用缓存的 data/cache 替换文件的任务，零 I/O。
+     * 不检查文件级过滤条件（增量更新场景下过滤条件不会突变）。
+     */
+    replaceFileTasksFast(filePath: string, data: string, cache: CachedMetadata) {
+        // 移除该文件的旧任务
+        this.tasksList = this.tasksList.filter(t => t.path !== filePath);
+        // 直接从内存提取新任务
+        const newTasks = this.extractTasksFromCache(filePath, data, cache);
         this.tasksList.push(...newTasks);
     }
 

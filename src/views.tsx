@@ -1,10 +1,10 @@
 import { Model } from "backbone";
-import { CachedMetadata, ItemView, moment, Notice, TFile, WorkspaceLeaf } from "obsidian";
+import { CachedMetadata, Editor, ItemView, MarkdownView, moment, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import { ObsidianBridge } from 'Obsidian-Tasks-Timeline/src/obsidianbridge';
 import { ObsidianTaskAdapter } from "Obsidian-Tasks-Timeline/src/taskadapter";
 import { createRoot, Root } from 'react-dom/client';
 import * as TaskMapable from 'utils/taskmapable';
-import { TaskDataModel, TaskStatus, TaskStatusMarkerMap } from "utils/tasks";
+import { TaskDataModel, TaskStatus, TaskStatusMarkerMap, TaskRegularExpressions } from "utils/tasks";
 import { defaultUserOptions, UserOption } from "./settings";
 import { t } from "./i18n";
 
@@ -34,7 +34,13 @@ export class TasksTimelineView extends BaseTasksView {
     // 增量更新防抖：收集短时间内变化的文件，批量处理
     private pendingFiles: Set<string> = new Set();
     private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    private static readonly DEBOUNCE_MS = 300;
+    // 是否已立即处理了第一批变更（避免重复立即处理）
+    private immediateProcessed: boolean = false;
+    // 缓存 onFileChanged 回调中 Obsidian 已提供的 data 和 cache，避免重复 I/O
+    private fileCacheMap: Map<string, { data: string; cache: CachedMetadata }> = new Map();
+    // 任务状态缓存：${path}:${line} → statusMarker，O(1) 用于 editor-change 快速查找
+    private taskStatusMap: Map<string, string> = new Map();
+    private static readonly DEBOUNCE_MS = 50;
 
     constructor(leaf: WorkspaceLeaf) {
         super(leaf);
@@ -53,6 +59,8 @@ export class TasksTimelineView extends BaseTasksView {
         this.registerEvent(this.app.metadataCache.on('changed', this.onFileChanged));
         // 文件删除时移除对应任务
         this.registerEvent(this.app.vault.on('delete', this.onFileDeleted));
+        // 编辑器即时变更：直接从编辑器内存读取新状态，无需等待文件落盘
+        this.registerEvent(this.app.workspace.on('editor-change', this.onEditorChange));
 
         const { containerEl } = this;
         const container = containerEl.children[1];
@@ -72,6 +80,7 @@ export class TasksTimelineView extends BaseTasksView {
             clearTimeout(this.debounceTimer);
             this.debounceTimer = null;
         }
+        this.taskStatusMap.clear();
     }
 
     onUpdateOptions(opt: UserOption) {
@@ -85,18 +94,73 @@ export class TasksTimelineView extends BaseTasksView {
     }
 
     /**
-     * 增量更新：当文件内容变更后，只重新解析该文件的任务
+     * 增量更新：当文件内容变更后，只重新解析该文件的任务。
+     * Obsidian 回调已提供 data（文件内容）和 cache（解析后的元数据），
+     * 直接缓存利用，避免后续重复 I/O。
      */
-    private onFileChanged = (file: TFile, _data: string, _cache: CachedMetadata) => {
+    private onFileChanged = (file: TFile, data: string, cache: CachedMetadata) => {
         if (!file?.path) return;
+        // 缓存 Obsidian 已提供的数据，后续 processPendingFiles 直接使用
+        this.fileCacheMap.set(file.path, { data, cache });
         this.pendingFiles.add(file.path);
         this.scheduleIncrementalUpdate();
     };
 
     /**
-     * 调度增量更新（带防抖）。如果已有定时器则重置；如果正在重载则延迟重试。
+     * 编辑器即时变更：当用户在笔记中点击 checkbox 切换任务状态时，
+     * Tasks 插件直接修改编辑器内存中的行内容，此时编辑器已有最新状态。
+     * 本处理器直接从编辑器行读取新标记并更新 model，无需等待文件落盘和 metadataCache 事件，
+     * 实现零延迟的 UI 同步。
+     */
+    private onEditorChange = (editor: Editor, markdownView: MarkdownView) => {
+        if (!markdownView?.file) return;
+        const filePath = markdownView.file.path;
+
+        // 仅在编辑器有焦点时处理（排除程序化编辑，如 handleCompleteTask 中的 toggle-done）
+        if (!editor.hasFocus()) return;
+
+        const cursor = editor.getCursor();
+        const line = editor.getLine(cursor.line);
+        const match = TaskRegularExpressions.taskRegex.exec(line);
+        if (!match) return;
+
+        const newMarker = match[3];
+        const key = `${filePath}:${cursor.line}`;
+        const oldMarker = this.taskStatusMap.get(key);
+        if (oldMarker === undefined || oldMarker === newMarker) return;
+
+        // 状态标记已变更 → 立即更新 model 中的数据
+        const modelList: TaskDataModel[] = this.taskListModel.get("taskList") as TaskDataModel[];
+        if (!modelList) return;
+
+        const updatedTasks = modelList.map(task => {
+            if (task.path === filePath && task.position.start.line === cursor.line) {
+                return {
+                    ...task,
+                    statusMarker: newMarker,
+                    checked: true,
+                    completed: newMarker === 'x',
+                    fullyCompleted: newMarker !== ' ',
+                };
+            }
+            return task;
+        });
+
+        this.taskListModel.set({ taskList: updatedTasks });
+        this.taskStatusMap.set(key, newMarker);
+    };
+
+    /**
+     * 调度增量更新（带防抖）。
+     * 第一个变更立即处理，后续变更在 50ms 内合并处理，保证即时响应。
      */
     private scheduleIncrementalUpdate() {
+        if (!this.immediateProcessed && !this.isReloading) {
+            // 首个变更立即处理，给用户即时反馈
+            this.immediateProcessed = true;
+            this.processPendingFiles();
+            return;
+        }
         if (this.debounceTimer !== null) {
             clearTimeout(this.debounceTimer);
         }
@@ -133,12 +197,23 @@ export class TasksTimelineView extends BaseTasksView {
 
             for (const filePath of files) {
                 const file = this.app.vault.getAbstractFileByPath(filePath);
-                if (file instanceof TFile) {
+                if (!(file instanceof TFile)) continue;
+
+                // 优先使用 onFileChanged 回调缓存的 data/cache，零 I/O 同步提取任务
+                const cached = this.fileCacheMap.get(filePath);
+                if (cached) {
+                    adapter.replaceFileTasksFast(filePath, cached.data, cached.cache);
+                } else {
+                    // 兜底：没有缓存时走异步 I/O 路径
                     await adapter.updateFileTasks(
                         file, fileIncludeFilter, fileExcludeFilter,
                         fileIncludeTagsFilter, fileExcludeTagsFilter
                     );
                 }
+            }
+            // 处理完毕，清除已使用的缓存
+            for (const filePath of files) {
+                this.fileCacheMap.delete(filePath);
             }
 
             const taskList = adapter.getTaskList();
@@ -154,11 +229,13 @@ export class TasksTimelineView extends BaseTasksView {
             const filteredTasks = this.filterTasks(allTasks);
 
             this.taskListModel.set({ taskList: filteredTasks });
+            this.rebuildTaskStatusMap();
         } catch (reason) {
             new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
             console.error("Error reloading tasks:", reason);
         } finally {
             this.isReloading = false;
+            this.immediateProcessed = false;
             // 处理期间可能有新文件变更进来，继续调度
             if (this.pendingFiles.size > 0) {
                 this.scheduleIncrementalUpdate();
@@ -179,6 +256,7 @@ export class TasksTimelineView extends BaseTasksView {
             const taskList = this.adapter.getTaskList();
             const filteredTasks = this.filterTasks(taskList);
             this.taskListModel.set({ taskList: filteredTasks });
+            this.rebuildTaskStatusMap();
         } catch (reason) {
             new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
             console.error("Error handling file deletion:", reason);
@@ -213,6 +291,7 @@ export class TasksTimelineView extends BaseTasksView {
 
             const taskfiles = this.userOptionModel.get("taskFiles");
             this.taskListModel.set({ taskList: filteredTasks });
+            this.rebuildTaskStatusMap();
             this.userOptionModel.set({ taskFiles: taskfiles || [] });
 
         } catch (reason) {
@@ -220,6 +299,21 @@ export class TasksTimelineView extends BaseTasksView {
             console.error("Error reloading tasks:", reason);
         } finally {
             this.isReloading = false;
+        }
+    }
+
+    /**
+     * 从 model 中的 taskList 重建任务状态缓存。
+     * key = ${path}:${line}，value = statusMarker。
+     * 用于 onEditorChange 的 O(1) 快速查找。
+     */
+    private rebuildTaskStatusMap() {
+        this.taskStatusMap.clear();
+        const taskList: TaskDataModel[] = this.taskListModel.get("taskList") as TaskDataModel[];
+        if (!taskList) return;
+        for (const task of taskList) {
+            const key = `${task.path}:${task.position.start.line}`;
+            this.taskStatusMap.set(key, task.statusMarker);
         }
     }
 

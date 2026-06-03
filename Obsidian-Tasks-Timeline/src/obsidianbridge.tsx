@@ -5,7 +5,7 @@ import * as React from 'react';
 import { UserOption, defaultUserOptions } from '../../src/settings';
 import { t, Language, formatNoSuchFile, formatErrorOpeningFile, formatSomethingWentWrong, formatTemplateFileNotFound, formatErrorCreatingFileTemplater, formatErrorCreatingFile, formatErrorWritingTask, formatErrorReadingFile } from '../../src/i18n';
 import * as TaskMapable from '../../utils/taskmapable';
-import { TaskDataModel } from '../../utils/tasks';
+import { TaskDataModel, TaskRegularExpressions } from '../../utils/tasks';
 import { QuickEntryHandlerContext, TaskItemEventHandlersContext } from './components/context';
 import { TimelineView } from './components/timelineview';
 
@@ -327,6 +327,31 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                 //@ts-ignore
                 this.app.commands.commands['obsidian-tasks-plugin:toggle-done']
                     .editorCheckCallback(false, editor, view);
+
+                // 乐观更新：toggle-done 已修改编辑器内容（在内存中），
+                // 直接从编辑器行中读取新的状态标记，立即更新 model，
+                // 无需等待文件落盘和 metadataCache 事件。
+                const newLine = editor.getLine(position.start.line);
+                const regexMatch = newLine.match(TaskRegularExpressions.taskRegex);
+                if (regexMatch) {
+                    const newMarker = regexMatch[3];
+                    const taskList: TaskDataModel[] = this.props.taskListModel.get("taskList");
+                    if (taskList) {
+                        const updatedTasks = taskList.map(task => {
+                            if (task.path === path && task.position.start.line === position.start.line) {
+                                return {
+                                    ...task,
+                                    statusMarker: newMarker,
+                                    checked: true,
+                                    completed: newMarker === 'x',
+                                    fullyCompleted: newMarker !== ' ',
+                                };
+                            }
+                            return task;
+                        });
+                        this.props.taskListModel.set({ taskList: updatedTasks });
+                    }
+                }
             }
         })
     }
