@@ -10,9 +10,12 @@ export function DateTimeToMoment(d: DateTime){
 }
 
 export function removeHightlightMarker(text: string){
-    const match = TaskRegularExpressions.highlightRegex.exec(text);
+    const regex = TaskRegularExpressions.highlightRegex;
+    regex.lastIndex = 0;
+    let match = regex.exec(text);
     while(match){
         text = text.replace(match[0], match[1]);
+        match = regex.exec(text);
     }
     return text;
 }

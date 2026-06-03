@@ -279,6 +279,7 @@ export class TasksTimelineView extends BaseTasksView {
             task = TaskMapable.dataviewTaskParser(task);
             task = dailyNoteFormatParser(task);
             task = TaskMapable.tagsParser(task);
+            task = TaskMapable.taskLinkParser(task);
             task = TaskMapable.remainderParser(task);
             task = TaskMapable.postProcessor(task);
 

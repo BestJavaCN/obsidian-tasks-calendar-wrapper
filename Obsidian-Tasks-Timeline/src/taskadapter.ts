@@ -86,16 +86,23 @@ export class ObsidianTaskAdapter {
 
     async generateTasksList(includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
         this.tasksList.length = 0;
-        const files = this.app.vault.getMarkdownFiles()
-        let filteredFiles = files;
-        if (includeFilter.length !== 0)
-            filteredFiles = filteredFiles.filter(this.includePathsFilter(includeFilter));
-        if (pathFilter.length !== 0)
-            filteredFiles = filteredFiles.filter(this.pathsFilter(pathFilter));
-        if (includeTags.length !== 0)
-            filteredFiles = filteredFiles.filter(this.fileIncludeTagsFilter(includeTags));
-        if (excludeTags.length !== 0)
-            filteredFiles = filteredFiles.filter(this.fileExcludeTagsFilter(excludeTags));
+        const files = this.app.vault.getMarkdownFiles();
+
+        const hasIncludeFilter = includeFilter.length !== 0;
+        const hasPathFilter = pathFilter.length !== 0;
+        const hasIncludeTags = includeTags.length !== 0;
+        const hasExcludeTags = excludeTags.length !== 0;
+
+        // 合并多个 filter 为单次遍历，避免创建中间数组
+        const filteredFiles = (hasIncludeFilter || hasPathFilter || hasIncludeTags || hasExcludeTags)
+            ? files.filter(file => {
+                if (hasIncludeFilter && !this.includePathsFilter(includeFilter)(file)) return false;
+                if (hasPathFilter && !this.pathsFilter(pathFilter)(file)) return false;
+                if (hasIncludeTags && !this.fileIncludeTagsFilter(includeTags)(file)) return false;
+                if (hasExcludeTags && !this.fileExcludeTagsFilter(excludeTags)(file)) return false;
+                return true;
+            })
+            : files;
 
         // Process files in batches to avoid overwhelming the system
         const BATCH_SIZE = 20;
@@ -277,7 +284,7 @@ export class ObsidianTaskAdapter {
                 const frontmatterTagPrefix = frontMatter["tag"].startsWith("#") ? "" : "#";
                 tags.push(frontmatterTagPrefix + frontMatter["tag"]);
             }
-            if (frontMatter["tags"] && typeof (frontMatter["tags"]) === typeof (new Array<string>())) {
+            if (frontMatter["tags"] && Array.isArray(frontMatter["tags"])) {
                 // add # as prefix if there is not such prefix
                 (frontMatter["tags"] as unknown as Array<string>).forEach(t => tags.push(t.startsWith("#") ? "" : "#" + t));
             }
@@ -315,7 +322,6 @@ export class ObsidianTaskAdapter {
             //happens: new Map<string, string>(),
             recurrence: "",
             fontMatter: frontMatter || {},
-            isTasksTask: false,
             due: undefined,
             scheduled: undefined,
             start: undefined,

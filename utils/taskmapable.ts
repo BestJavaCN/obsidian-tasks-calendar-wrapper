@@ -121,12 +121,9 @@ export function tasksPluginTaskParser(item: TasksUtil.TaskDataModel): TasksUtil.
 
     if (trailingTags.length > 0) description += ' ' + trailingTags;
 
-    const isTasksTask = [startDate, scheduledDate, dueDate, doneDate].some(d => !!d);
-
     item.visual = description;
     item.priority = priority;
     item.recurrence = recurrenceRule;
-    item.isTasksTask = isTasksTask;
     item.due = dueDate;
     item.scheduled = scheduledDate;
     item.completion = doneDate;
@@ -183,6 +180,9 @@ export function dailyNoteTaskParser(dailyNoteFormat: string = TasksUtil.innerDat
             const normalizedFolder = dailyNoteFolder.replace(/\/$/, '');
             if (pathToParse.startsWith(normalizedFolder + '/')) {
                 pathToParse = pathToParse.substring((normalizedFolder + '/').length);
+            } else {
+                // 如果指定了 dailyNoteFolder 但文件不在此文件夹下，跳过 daily note 解析
+                return item;
             }
         }
         
@@ -216,6 +216,10 @@ export function dailyNoteTaskParser(dailyNoteFormat: string = TasksUtil.innerDat
 export function taskLinkParser(item: TasksUtil.TaskDataModel) {
 
     item.outlinks = [];
+
+    TasksUtil.TaskRegularExpressions.outerLinkRegex.lastIndex = 0;
+    TasksUtil.TaskRegularExpressions.innerLinkRegex.lastIndex = 0;
+    TasksUtil.TaskRegularExpressions.keyValueRegex.lastIndex = 0;
 
     let outerLinkMatch = TasksUtil.TaskRegularExpressions.outerLinkRegex.exec(item.visual!);
     let innerLinkMatch = TasksUtil.TaskRegularExpressions.innerLinkRegex.exec(item.visual!);

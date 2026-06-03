@@ -9,7 +9,7 @@ import { t } from "./i18n";
 
 export default class TasksCalendarWrapper extends Plugin {
 	userOptions: UserOption = {} as UserOption;
-	private userOptionsReloading = false;
+	private updateOptionsTimer: ReturnType<typeof setTimeout> | null = null;
 	async onload() {
 		await this.loadOptions();
 		this.registerView(
@@ -46,18 +46,17 @@ export default class TasksCalendarWrapper extends Plugin {
 
 	private updateOptions(updatedOpts: Partial<UserOption>) {
 		Object.assign(this.userOptions, { ...updatedOpts });
-		console.log(this.app.workspace.getLeavesOfType(TIMELINE_VIEW))
-		if (!this.userOptionsReloading) {
-			this.userOptionsReloading = true;
-			setTimeout(() => {
-				this.app.workspace.getLeavesOfType(TIMELINE_VIEW).forEach(leaf => {
-					if (leaf.view instanceof TasksTimelineView) {
-						leaf.view.onUpdateOptions({ ...this.userOptions });
-					}
-				});
-				this.userOptionsReloading = false;
-			}, 5000);
+		if (this.updateOptionsTimer !== null) {
+			clearTimeout(this.updateOptionsTimer);
 		}
+		this.updateOptionsTimer = setTimeout(() => {
+			this.app.workspace.getLeavesOfType(TIMELINE_VIEW).forEach(leaf => {
+				if (leaf.view instanceof TasksTimelineView) {
+					leaf.view.onUpdateOptions({ ...this.userOptions });
+				}
+			});
+			this.updateOptionsTimer = null;
+		}, 500);
 	}
 
 	async loadOptions(): Promise<void> {

@@ -175,7 +175,6 @@ export interface TaskDataModel extends STask {
     //
     fontMatter: Record<string, string>,
     //
-    isTasksTask: boolean,
     statusMarker: string,
     dates: Map<string, moment.Moment>;
 }
