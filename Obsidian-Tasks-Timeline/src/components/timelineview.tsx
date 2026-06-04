@@ -85,12 +85,15 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         this.setState({ todayFocus: !this.state.todayFocus });
     }
 
-    private computeDerivedData(taskList: TaskDataModel[], userOptions: UserOption): DerivedData {
+    private computeDerivedData(taskList: TaskDataModel[], userOptions: UserOption, isSTFContext: boolean = false): DerivedData {
         // Main task list: exclude non-overdue STF tasks.
         // STF tasks only appear in their own STF panels and the Overdue panel.
-        const mainTaskList = taskList.filter(t =>
-            t.stfAlias === NON_STF_TASK || t.status === TaskStatus.overdue
-        );
+        // When computing for an STF context, all tasks in the list are already STF-filtered.
+        const mainTaskList = isSTFContext
+            ? taskList
+            : taskList.filter(t =>
+                t.stfAlias === NON_STF_TASK || t.status === TaskStatus.overdue
+            );
 
         const involvedDates: Set<string> = new Set();
         let overdueCount = 0;
@@ -261,10 +264,11 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         const enabledSTFs = userOptions.specificTaskFiles.filter(f => f.enabled && f.path);
         if (enabledSTFs.length === 0) return [];
 
-        // Count tasks by alias
+        // Count tasks by alias, excluding completed, cancelled, and overdue tasks
         const aliasCounts = new Map<string, number>();
         for (const task of taskList) {
             if (task.stfAlias === NON_STF_TASK) continue;
+            if (task.status === TaskStatus.done || task.status === TaskStatus.cancelled || task.status === TaskStatus.overdue) continue;
             const count = aliasCounts.get(task.stfAlias) || 0;
             aliasCounts.set(task.stfAlias, count + 1);
         }
@@ -305,7 +309,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
             t.status !== TaskStatus.cancelled
         );
         if (stfTasks.length === 0) return null;
-        return this.computeDerivedData(stfTasks, this.props.userOptions);
+        return this.computeDerivedData(stfTasks, this.props.userOptions, true);
     }
 
     render(): React.ReactNode {
