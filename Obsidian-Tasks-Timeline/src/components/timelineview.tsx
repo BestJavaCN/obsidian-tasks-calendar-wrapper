@@ -3,16 +3,14 @@ import * as React from 'react';
 import { UserOption } from '../../../src/settings';
 import { t } from '../../../src/i18n';
 import * as TaskMapable from '../../../utils/taskmapable';
-import { innerDateFormat, TaskDataModel, TaskStatus } from '../../../utils/tasks';
+import { innerDateFormat, NON_STF_TASK, TaskDataModel, TaskStatus } from '../../../utils/tasks';
 import { TaskListContext, TodayFocusEventHandlersContext, UserOptionContext } from './context';
 import { YearView } from './yearview';
-import { TaskItemView } from './taskitemview';
 
 
 const defaultTimelineProps = {
     userOptions: {} as UserOption,
     taskList: [] as TaskDataModel[],
-    specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
 }
 const defaultTimelineStates = {
     filter: "" as string,
@@ -32,6 +30,7 @@ interface DerivedData {
     quickEntryFiles: string[];
     styles: string;
     counters: Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }>;
+    stfCounters: Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }>;
     userOptionContextValue: React.ComponentProps<typeof UserOptionContext.Provider>['value'];
     taskListContexts: Array<{ year: number; value: React.ComponentProps<typeof TaskListContext.Provider>['value'] }>;
 }
@@ -63,6 +62,8 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     }
 
     handleCounterFilterClick(filterName: string) {
+        // Clear specific task file filter when a regular counter is clicked (mutually exclusive)
+        this.setState({ activeSpecificTaskFile: "" });
         if (this.state.filter !== filterName) {
             this.setState({ filter: filterName });
         } else {
@@ -71,6 +72,8 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     }
 
     handleSpecificTaskFileClick(alias: string) {
+        // Clear regular filter when a specific task file counter is clicked (mutually exclusive)
+        this.setState({ filter: "" });
         if (this.state.activeSpecificTaskFile !== alias) {
             this.setState({ activeSpecificTaskFile: alias });
         } else {
@@ -83,12 +86,19 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     }
 
     private computeDerivedData(taskList: TaskDataModel[], userOptions: UserOption): DerivedData {
+        // Main task list: exclude non-overdue STF tasks.
+        // STF tasks only appear in their own STF panels and the Overdue panel.
+        const mainTaskList = taskList.filter(t =>
+            t.stfAlias === NON_STF_TASK || t.status === TaskStatus.overdue
+        );
+
         const involvedDates: Set<string> = new Set();
         let overdueCount = 0;
         let unplannedCount = 0;
         let completedCount = 0;
         let cancelledCount = 0;
 
+        // Collect dates from ALL tasks (including STF) so date ranges are complete
         for (let i = 0; i < taskList.length; i++) {
             const t = taskList[i];
             if (t.due) involvedDates.add(t.due.format(innerDateFormat));
@@ -100,13 +110,20 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
             if (dates.size > 0) {
                 dates.forEach((d: Moment) => { involvedDates.add(d.format(innerDateFormat)); });
             }
+            // Count overdue from ALL tasks (STF overdue should appear in Overdue panel)
+            if (t.status === TaskStatus.overdue) overdueCount++;
+        }
+
+        // Count todo/unplanned/completed/cancelled from mainTaskList only
+        for (const t of mainTaskList) {
             switch (t.status) {
-                case TaskStatus.overdue: overdueCount++; break;
                 case TaskStatus.unplanned: unplannedCount++; break;
                 case TaskStatus.done: completedCount++; break;
                 case TaskStatus.cancelled: cancelledCount++; break;
             }
         }
+
+        const todoCount = mainTaskList.length - unplannedCount - completedCount - cancelledCount;
 
         const todayStr = moment().format(innerDateFormat);
         involvedDates.add(todayStr);
@@ -118,18 +135,16 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         const latestYear = +moment(lastDay).format("YYYY");
         const years = Array.from({ length: latestYear - earliestYear + 1 }, (_, i) => i + earliestYear);
 
-        // 预计算每年分组，避免 render 中重复 filter
+        // Preview calculations grouped by year (using mainTaskList for Todo/Overdue/Unplanned view)
         const tasksByYear = new Map<number, TaskDataModel[]>();
         const datesByYear = new Map<number, string[]>();
         for (const y of years) {
             const yearMoment = moment().year(y);
-            tasksByYear.set(y, taskList.filter(TaskMapable.filterYear(yearMoment)));
+            tasksByYear.set(y, mainTaskList.filter(TaskMapable.filterYear(yearMoment)));
             datesByYear.set(y, sortedDates.filter(d => moment(d).year() === y));
         }
 
-        const todoCount = taskList.length - unplannedCount - completedCount - cancelledCount - overdueCount;
-
-        // 预计算样式字符串
+        // Preview calculation style string
         const stylesArr: string[] = [];
         if (!userOptions.useCounters) stylesArr.push("noCounters");
         if (!userOptions.useQuickEntry) stylesArr.push("noQuickEntry");
@@ -150,7 +165,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
             if (!userOptions.useTags) stylesArr.push("noTag");
         }
 
-        // 预计算 quickEntryFiles
+        // Preview calculation quickEntryFiles
         const quickEntryFiles = [...userOptions.taskFiles];
         if (userOptions.inbox && userOptions.inbox !== '')
             quickEntryFiles.push(userOptions.inbox);
@@ -171,6 +186,9 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                 }
             }
         }
+
+        // Compute STF counters from the full task list
+        const stfCounters = this.computeSTFCounters(taskList, userOptions);
 
         return {
             sortedDates,
@@ -203,6 +221,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                     ariaLabel: t(userOptions.language).unplannedTasks
                 }
             ],
+            stfCounters,
             userOptionContextValue: {
                 hideTags: userOptions.hideTags,
                 tagPalette: userOptions.tagColorPalette,
@@ -213,7 +232,9 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                 useBuiltinStyle: userOptions.useBuiltinStyle,
                 language: userOptions.language,
                 counters: [] as Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }>,
-                specificTaskFileData: this.props.specificTaskFileData || [],
+                stfCounters: [] as Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }>,
+                activeSpecificTaskFile: "" as string,
+                handleSpecificTaskFileClick: this.handleSpecificTaskFileClick,
             },
             taskListContexts: years.map(y => ({
                 year: y,
@@ -227,6 +248,39 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         };
     }
 
+    /**
+     * Compute STF counters from the unified task list.
+     * Each enabled STF gets a counter showing the count of its non-done, non-cancelled tasks.
+     */
+    private computeSTFCounters(
+        taskList: TaskDataModel[],
+        userOptions: UserOption
+    ): Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }> {
+        if (!userOptions.useSpecificTaskFiles || !userOptions.specificTaskFiles) return [];
+
+        const enabledSTFs = userOptions.specificTaskFiles.filter(f => f.enabled && f.path);
+        if (enabledSTFs.length === 0) return [];
+
+        // Count tasks by alias
+        const aliasCounts = new Map<string, number>();
+        for (const task of taskList) {
+            if (task.stfAlias === NON_STF_TASK) continue;
+            const count = aliasCounts.get(task.stfAlias) || 0;
+            aliasCounts.set(task.stfAlias, count + 1);
+        }
+
+        return enabledSTFs.map(stf => {
+            const alias = stf.alias || stf.path;
+            return {
+                onClick: () => this.handleSpecificTaskFileClick(alias),
+                cnt: aliasCounts.get(alias) || 0,
+                id: `stf-${alias}`,
+                label: alias,
+                ariaLabel: alias,
+            };
+        });
+    }
+
     private getDerivedData(): DerivedData {
         const taskList = this.props.taskList;
         const userOptions = this.props.userOptions;
@@ -238,110 +292,74 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         return this.cachedDerived!;
     }
 
+    /**
+     * Compute derived data for a subset of tasks (used when STF filter is active).
+     * Uses the same computeDerivedData logic but with STF-filtered tasks.
+     */
+    private computeSTFDerivedData(stfAlias: string): DerivedData | null {
+        const taskList = this.props.taskList;
+        const stfTasks = taskList.filter(t =>
+            t.stfAlias === stfAlias &&
+            t.status !== TaskStatus.overdue &&
+            t.status !== TaskStatus.done &&
+            t.status !== TaskStatus.cancelled
+        );
+        if (stfTasks.length === 0) return null;
+        return this.computeDerivedData(stfTasks, this.props.userOptions);
+    }
+
     render(): React.ReactNode {
         const derived = this.getDerivedData();
 
         // 将 counters 引用同步到 userOptionContextValue 中 (避免循环依赖)
         derived.userOptionContextValue.counters = derived.counters;
+        derived.userOptionContextValue.stfCounters = derived.stfCounters;
 
         const counterFilter = this.state.filter.length === 0 ? "" :
             this.state.filter + " " + this.props.userOptions.counterBehavior;
         const todayFocus = this.state.todayFocus ? "todayFocus" : "";
 
-        const specificTaskFileData = this.props.specificTaskFileData || [];
         const activeSpecificTaskFile = this.state.activeSpecificTaskFile;
-        const activeSpecificTasks = activeSpecificTaskFile
-            ? (specificTaskFileData.find(d => d.alias === activeSpecificTaskFile)?.tasks || [])
-            : [];
+        const stfFilter = activeSpecificTaskFile ? "stfFilter" : "";
+
+        // When a specific task file is active, compute derived data from only
+        // the matching STF tasks (excluding overdue/completed/cancelled).
+        // This uses the unified taskList as the single source of truth.
+        let taskListContexts = derived.taskListContexts;
+        let stfCounters = derived.stfCounters;
+        if (activeSpecificTaskFile) {
+            const stfDerived = this.computeSTFDerivedData(activeSpecificTaskFile);
+            if (stfDerived) {
+                taskListContexts = stfDerived.taskListContexts;
+                // Show STF counters when STF is active too
+                stfCounters = stfDerived.stfCounters;
+            } else {
+                // STF has no displayable tasks - show empty view
+                taskListContexts = [];
+            }
+        }
+
+        // Inject dynamic state into context value
+        const contextValue = {
+            ...derived.userOptionContextValue,
+            activeSpecificTaskFile,
+            handleSpecificTaskFileClick: this.handleSpecificTaskFileClick,
+        };
 
         return (
-            <div className={`taskido ${derived.styles} ${counterFilter} ${todayFocus}`}
+            <div className={`taskido ${derived.styles} ${counterFilter} ${todayFocus} ${stfFilter}`}
                 id={`taskido${(new Date()).getTime()}`}>
                 <TodayFocusEventHandlersContext.Provider value={{ handleTodayFocusClick: this.handleTodayFocus }}>
-                    <UserOptionContext.Provider value={derived.userOptionContextValue}>
+                    <UserOptionContext.Provider value={contextValue}>
                         <span>
-                            {derived.taskListContexts.map((ctx, i) => (
+                            {taskListContexts.map((ctx, i) => (
                                 <TaskListContext.Provider value={ctx.value} key={i}>
                                     <YearView year={ctx.year} key={ctx.year} />
                                 </TaskListContext.Provider>
                             ))}
                         </span>
-                        {specificTaskFileData.length > 0 && (
-                            <SpecificTaskFilePanels
-                                data={specificTaskFileData}
-                                activeAlias={activeSpecificTaskFile}
-                                onPanelClick={this.handleSpecificTaskFileClick}
-                            />
-                        )}
-                        {activeSpecificTasks.length > 0 && (
-                            <SpecificTaskFileContent
-                                alias={activeSpecificTaskFile}
-                                tasks={activeSpecificTasks}
-                            />
-                        )}
                     </UserOptionContext.Provider>
                 </TodayFocusEventHandlersContext.Provider>
             </div >)
-    }
-}
-
-// Specific Task File Panels Component
-interface SpecificTaskFilePanelsProps {
-    data: Array<{ alias: string; tasks: TaskDataModel[] }>;
-    activeAlias: string;
-    onPanelClick: (alias: string) => void;
-}
-
-class SpecificTaskFilePanels extends React.Component<SpecificTaskFilePanelsProps> {
-    render(): React.ReactNode {
-        const { data, activeAlias, onPanelClick } = this.props;
-        return (
-            <div className="specific-task-file-panels">
-                <div className="counters">
-                    {data.map((item, i) => (
-                        <div
-                            className={`counter specific-task-counter${activeAlias === item.alias ? ' active' : ''}`}
-                            key={i}
-                            id={`stf-${item.alias}`}
-                            onClick={() => onPanelClick(item.alias)}
-                        >
-                            <div className="count">{item.tasks.length}</div>
-                            <div className="label">{item.alias}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        );
-    }
-}
-
-// Specific Task File Content Component
-interface SpecificTaskFileContentProps {
-    alias: string;
-    tasks: TaskDataModel[];
-}
-
-class SpecificTaskFileContent extends React.Component<SpecificTaskFileContentProps> {
-    render(): React.ReactNode {
-        const { alias, tasks } = this.props;
-        return (
-            <div className="specific-task-file-content">
-                <div className="specific-task-file-header">
-                    <div className="dateLine">
-                        <div className="date">{alias}</div>
-                        <div className="weekday">{tasks.length} tasks</div>
-                    </div>
-                </div>
-                <div className="details">
-                    <div className="content">
-                        <TaskListContext.Provider value={{ taskList: tasks, entryOnDate: "", involvedDates: [] }}>
-                            {tasks.map((t, i) => (
-                                <TaskItemView key={i} taskItem={t} />
-                            ))}
-                        </TaskListContext.Provider>
-                    </div>
-                </div>
-            </div>
-        );
     }
 }

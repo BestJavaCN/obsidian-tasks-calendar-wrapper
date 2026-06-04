@@ -61,10 +61,11 @@ export class TaskItemView extends React.Component<TaskItemProps, TaskItemState> 
                     };
                     return (
                         <UserOptionContext.Consumer>{
-                            ({ dateFormat, hideTags, useBuiltinStyle, language }) => {
+                            ({ dateFormat, hideTags, useBuiltinStyle, language, activeSpecificTaskFile }) => {
                                 const tr = t((language || "en") as "en" | "zh");
                                 return (
                                     <div data-line={line} data-task={item.statusMarker} data-col={col} data-link={link} data-dailynote={isDailyNote}
+                                        data-stf-alias={item.stfAlias || ""}
                                         className={`task ${item.status}`}
                                         style={{ "--task-color": color || "var(--text-muted)" } as React.CSSProperties} aria-label={ariaLabel}>
                                         <StripWithIcon onToggle={onToggleTask} useBuiltinStyle={useBuiltinStyle}

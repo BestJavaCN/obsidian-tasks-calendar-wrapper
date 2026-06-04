@@ -378,11 +378,27 @@ class Counters extends React.Component<CountersProps> {
     render(): React.ReactNode {
         return (
             <UserOptionContext.Consumer>{options => (
-                < div className='counters' >
-                    {options.counters.map((c, i) =>
-                        <CounterItem onClick={c.onClick} cnt={c.cnt} id={c.id} label={c.label} ariaLabel={c.ariaLabel} key={i} />
+                <>
+                    <div className='counters'>
+                        {options.counters.map((c, i) =>
+                            <CounterItem onClick={c.onClick} cnt={c.cnt} id={c.id} label={c.label} ariaLabel={c.ariaLabel} key={i} />
+                        )}
+                    </div>
+                    {options.stfCounters && options.stfCounters.length > 0 && (
+                        <div className='counters'>
+                            {options.stfCounters.map((c, i) => {
+                                const isActive = options.activeSpecificTaskFile && c.id === `stf-${options.activeSpecificTaskFile}`;
+                                return (
+                                    <div className={`counter${isActive ? ' stf-active' : ''}`}
+                                        id={c.id} aria-label={c.ariaLabel} onClick={c.onClick} key={`stf-${i}`}>
+                                        <div className='count'>{c.cnt}</div>
+                                        <div className='label'>{c.label}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
-                </div>
+                </>
             )}
             </UserOptionContext.Consumer>
         );

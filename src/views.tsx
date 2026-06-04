@@ -4,7 +4,7 @@ import { ObsidianBridge } from 'Obsidian-Tasks-Timeline/src/obsidianbridge';
 import { ObsidianTaskAdapter } from "Obsidian-Tasks-Timeline/src/taskadapter";
 import { createRoot, Root } from 'react-dom/client';
 import * as TaskMapable from 'utils/taskmapable';
-import { TaskDataModel, TaskStatus, TaskStatusMarkerMap, TaskRegularExpressions } from "utils/tasks";
+import { TaskDataModel, TaskStatus, TaskStatusMarkerMap, TaskRegularExpressions, NON_STF_TASK } from "utils/tasks";
 import { defaultUserOptions, SpecificTaskFile, UserOption } from "./settings";
 import { t } from "./i18n";
 
@@ -24,7 +24,6 @@ export abstract class BaseTasksView extends ItemView {
 export class TasksTimelineView extends BaseTasksView {
     private taskListModel = new Model({
         taskList: [] as TaskDataModel[],
-        specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
     });
 
     private isReloading: boolean = false;
@@ -227,29 +226,11 @@ export class TasksTimelineView extends BaseTasksView {
 
             const parsedChangedTasks = await this.parseTasks(changedTasks);
 
-            // Handle specific task files on incremental update
-            const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
-            let specificFilePaths: Set<string> = new Set();
-            if (useSpecificTaskFiles) {
-                const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
-                if (specificTaskFiles && specificTaskFiles.length > 0) {
-                    specificFilePaths = new Set(specificTaskFiles.filter(f => f.enabled && f.path).map(f => f.path));
-                    await this.incrementalSpecificTaskFileUpdate(specificTaskFiles, changedFilePaths, changedTasks);
-                }
-            }
+            // Assign stfAlias to changed tasks (unchanged tasks already have correct aliases)
+            this.assignSTFAliases(parsedChangedTasks);
 
             const allTasks = [...unchangedTasks, ...parsedChangedTasks];
-            let filteredTasks = this.filterTasks(allTasks);
-
-            // Exclude non-overdue tasks from specific task files from the main task list
-            if (useSpecificTaskFiles && specificFilePaths.size > 0) {
-                filteredTasks = filteredTasks.filter(t => {
-                    if (specificFilePaths.has(t.path)) {
-                        return t.status === TaskStatus.overdue;
-                    }
-                    return true;
-                });
-            }
+            const filteredTasks = this.filterTasks(allTasks);
 
             this.taskListModel.set({ taskList: filteredTasks });
             this.rebuildTaskStatusMap();
@@ -277,6 +258,7 @@ export class TasksTimelineView extends BaseTasksView {
             this.adapter.removeFileTasks(file.path);
 
             const taskList = this.adapter.getTaskList();
+            this.assignSTFAliases(taskList);
             const filteredTasks = this.filterTasks(taskList);
             this.taskListModel.set({ taskList: filteredTasks });
             this.rebuildTaskStatusMap();
@@ -308,34 +290,20 @@ export class TasksTimelineView extends BaseTasksView {
 
             await adapter.generateTasksList(fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter);
 
-            const taskList = adapter.getTaskList();
-            const specificTaskFileTasks = await this.parseSpecificTaskFiles();
-            const specificFilePaths = new Set<string>();
-            for (const entry of specificTaskFileTasks) {
-                specificFilePaths.add(entry.path);
-            }
+            // Parse STF files that may bypass include/exclude path filters
+            await this.parseAdditionalSTFFiles();
 
-            const allTasks = [...taskList, ...specificTaskFileTasks];
+            const allTasks = adapter.getTaskList();
+
+            // Assign stfAlias to all tasks based on STF configuration
+            this.assignSTFAliases(allTasks);
+
             const tasks = await this.parseTasks(allTasks);
-            let filteredTasks = this.filterTasks(tasks);
-
-            // Exclude non-overdue tasks from specific task files from the main task list
-            // Overdue tasks from specific task files should still appear in the Overdue panel
-            filteredTasks = filteredTasks.filter(t => {
-                if (specificFilePaths.has(t.path)) {
-                    // Only keep overdue tasks from specific task files in the main list
-                    return t.status === TaskStatus.overdue;
-                }
-                return true;
-            });
-
-            // Build the specific task file data for display
-            const specificTaskFileData = await this.buildSpecificTaskFileData(specificTaskFileTasks);
+            const filteredTasks = this.filterTasks(tasks);
 
             const taskfiles = this.userOptionModel.get("taskFiles");
             this.taskListModel.set({
                 taskList: filteredTasks,
-                specificTaskFileData: specificTaskFileData,
             });
             this.rebuildTaskStatusMap();
             this.userOptionModel.set({ taskFiles: taskfiles || [] });
@@ -349,130 +317,72 @@ export class TasksTimelineView extends BaseTasksView {
     }
 
     /**
-     * Parse all enabled specific task files, bypassing include/exclude path filters.
-     * Returns raw task data (before status/date parsing).
+     * Parse STF files that may not match include/exclude path filters.
+     * These files are appended directly to the adapter's internal task list
+     * so they participate in the unified data flow.
      */
-    private async parseSpecificTaskFiles(): Promise<TaskDataModel[]> {
+    private async parseAdditionalSTFFiles(): Promise<void> {
         const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        if (!useSpecificTaskFiles) return;
+
         const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
-        if (!useSpecificTaskFiles || !specificTaskFiles || specificTaskFiles.length === 0) {
-            return [];
-        }
+        if (!specificTaskFiles || specificTaskFiles.length === 0) return;
 
         const enabledFiles = specificTaskFiles.filter(f => f.enabled && f.path);
-        if (enabledFiles.length === 0) return [];
+        if (enabledFiles.length === 0) return;
 
         if (!this.adapter) {
             this.adapter = new ObsidianTaskAdapter(this.app);
         }
-        const result: TaskDataModel[] = [];
+        const existingTasks = this.adapter.getTaskList();
+        const existingPaths = new Set(existingTasks.map(t => t.path));
 
         for (const stf of enabledFiles) {
+            if (existingPaths.has(stf.path)) continue; // Already parsed by generateTasksList
+
             const file = this.app.vault.getAbstractFileByPath(stf.path);
             if (!(file instanceof TFile)) continue;
             try {
-                await this.adapter.parseSingleFileIntoTarget(file, result);
+                await this.adapter.parseFileIntoTaskList(file);
             } catch (e) {
                 console.error(`Error parsing specific task file ${stf.path}:`, e);
             }
         }
-
-        return result;
     }
 
     /**
-     * Build the specific task file data structure for display panels.
-     * Groups tasks by alias and filters out completed/cancelled tasks.
+     * Assign stfAlias to each task based on STF configuration.
+     * Tasks from STF files get their alias as stfAlias,
+     * others get "Non_STF_Task".
      */
-    private async buildSpecificTaskFileData(specificTaskFileTasks: TaskDataModel[]): Promise<Array<{ alias: string; tasks: TaskDataModel[] }>> {
+    private assignSTFAliases(taskList: TaskDataModel[]): void {
+        const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        if (!useSpecificTaskFiles) {
+            for (const task of taskList) {
+                task.stfAlias = NON_STF_TASK;
+            }
+            return;
+        }
+
         const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
-        if (!specificTaskFiles || specificTaskFiles.length === 0) return [];
-
-        const enabledFiles = specificTaskFiles.filter(f => f.enabled && f.path);
-        const result: Array<{ alias: string; tasks: TaskDataModel[] }> = [];
-
-        for (const stf of enabledFiles) {
-            const fileTasks = specificTaskFileTasks.filter(t => t.path === stf.path);
-            // Parse the tasks (date, status, etc.)
-            const parsedTasks = await this.parseTasks(fileTasks);
-            // Filter out completed/cancelled tasks
-            const activeTasks = parsedTasks.filter(t => {
-                const hideStatus = this.userOptionModel.get("hideStatusTasks") || [];
-                if (hideStatus.includes(t.statusMarker)) return false;
-                if (hideStatus.some(m => TaskStatusMarkerMap[m as keyof typeof TaskStatusMarkerMap] === t.status)) return false;
-                return true;
-            });
-            // Sort tasks
-            const sortFn = this.getSortFunction();
-            activeTasks.sort(sortFn);
-
-            result.push({
-                alias: stf.alias || stf.path,
-                tasks: activeTasks,
-            });
+        if (!specificTaskFiles || specificTaskFiles.length === 0) {
+            for (const task of taskList) {
+                task.stfAlias = NON_STF_TASK;
+            }
+            return;
         }
 
-        return result;
-    }
-
-    private getSortFunction(): (a: TaskDataModel, b: TaskDataModel) => number {
-        const sortStr = this.userOptionModel.get("sort") as string;
-        try {
-            // eslint-disable-next-line no-new-func
-            return new Function(`return ${sortStr}`)() as (a: TaskDataModel, b: TaskDataModel) => number;
-        } catch {
-            return (t1, t2) => t1.order <= t2.order ? -1 : 1;
-        }
-    }
-
-    /**
-     * Incrementally update specific task file data when files change.
-     * Re-parses only the specific task files that were changed.
-     */
-    private async incrementalSpecificTaskFileUpdate(
-        specificTaskFiles: SpecificTaskFile[],
-        changedFilePaths: Set<string>,
-        changedTasks: TaskDataModel[]
-    ): Promise<void> {
-        if (!this.adapter) {
-            this.adapter = new ObsidianTaskAdapter(this.app);
-        }
-        const enabledFiles = specificTaskFiles.filter(f => f.enabled && f.path);
-        const changedSpecificFiles = enabledFiles.filter(f => changedFilePaths.has(f.path));
-
-        if (changedSpecificFiles.length === 0) return;
-
-        // Re-parse all changed specific task files
-        const specificTaskFileTasks: TaskDataModel[] = [];
-        for (const stf of changedSpecificFiles) {
-            const file = this.app.vault.getAbstractFileByPath(stf.path);
-            if (!(file instanceof TFile)) continue;
-            try {
-                await this.adapter.parseSingleFileIntoTarget(file, specificTaskFileTasks);
-            } catch (e) {
-                console.error(`Error parsing specific task file ${stf.path}:`, e);
+        // Build a map of path -> alias for O(1) lookup
+        const pathToAlias = new Map<string, string>();
+        for (const stf of specificTaskFiles) {
+            if (stf.enabled && stf.path) {
+                pathToAlias.set(stf.path, stf.alias || stf.path);
             }
         }
 
-        // Build specific task file data
-        const specificTaskFileData = await this.buildSpecificTaskFileData(specificTaskFileTasks);
-
-        // Update the task list model
-        const currentData = this.taskListModel.get("specificTaskFileData") as Array<{ alias: string; tasks: TaskDataModel[] }> || [];
-        const mergedData = [...currentData];
-        for (const newData of specificTaskFileData) {
-            const idx = mergedData.findIndex(d => d.alias === newData.alias);
-            if (idx >= 0) {
-                mergedData[idx] = newData;
-            } else {
-                mergedData.push(newData);
-            }
+        for (const task of taskList) {
+            task.stfAlias = pathToAlias.get(task.path) || NON_STF_TASK;
         }
-
-        this.taskListModel.set({
-            specificTaskFileData: mergedData,
-            taskList: this.taskListModel.get("taskList"),
-        }, { silent: true });
     }
 
     /**

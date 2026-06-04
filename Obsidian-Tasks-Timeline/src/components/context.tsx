@@ -14,13 +14,15 @@ export const UserOptionContext = React.createContext({
     taskFiles: [] as string[],
     select: "" as string,
     counters: [] as CounterProps[],
+    stfCounters: [] as CounterProps[],
     dateFormat: "YYYY-MM-DD" as string,
     tagPalette: {} as any,
     hideTags: [] as string[],
     forward: false as boolean,
     useBuiltinStyle: true as boolean,
     language: "en" as string,
-    specificTaskFileData: [] as Array<{ alias: string; tasks: TaskDataModel[] }>,
+    activeSpecificTaskFile: "" as string,
+    handleSpecificTaskFileClick: (alias: string) => {},
 });
 
 export const QuickEntryHandlerContext = React.createContext({

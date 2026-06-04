@@ -177,6 +177,15 @@ export interface TaskDataModel extends STask {
     //
     statusMarker: string,
     dates: Map<string, moment.Moment>;
+    /**
+     * Identifies which Specific Task File (STF) this task belongs to.
+     * "Non_STF_Task" for regular tasks that don't belong to any STF.
+     * For STF tasks, this is the alias name of the STF.
+     */
+    stfAlias: string;
 }
+
+/** Default value for stfAlias for tasks not belonging to any STF */
+export const NON_STF_TASK = "Non_STF_Task";
 
 

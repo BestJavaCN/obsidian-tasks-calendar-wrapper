@@ -1,6 +1,6 @@
 import { App, CachedMetadata, FrontMatterCache, LinkCache, ListItemCache, Pos, SectionCache, TagCache, TFile } from "obsidian";
 import { Link } from "../../dataview-util/markdown";
-import { TaskDataModel, TaskRegularExpressions } from "../../utils/tasks";
+import { NON_STF_TASK, TaskDataModel, TaskRegularExpressions } from "../../utils/tasks";
 
 export class ObsidianTaskAdapter {
     private app: App;
@@ -18,6 +18,14 @@ export class ObsidianTaskAdapter {
 
     getTaskList() {
         return [...this.tasksList];
+    }
+
+    /**
+     * Parse a file and append its tasks directly to the internal task list.
+     * Used for STF files that bypass include/exclude path filters.
+     */
+    async parseFileIntoTaskList(file: TFile) {
+        await this.parseFileIntoTarget(file, this.tasksList);
     }
 
     private fileMatchesFilters(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]): boolean {
@@ -70,7 +78,7 @@ export class ObsidianTaskAdapter {
         }
     }
 
-    private async parseFileIntoTarget(file: TFile, targetArray: TaskDataModel[]) {
+    async parseFileIntoTarget(file: TFile, targetArray: TaskDataModel[]) {
         const link = Link.file(file.path);
         try {
             const content = await this.app.vault.cachedRead(file);
@@ -84,13 +92,6 @@ export class ObsidianTaskAdapter {
         }
     }
 
-    /**
-     * Parse a single file into the target array without any path filters.
-     * Used by specific task files feature to bypass include/exclude path settings.
-     */
-    async parseSingleFileIntoTarget(file: TFile, targetArray: TaskDataModel[]) {
-        await this.parseFileIntoTarget(file, targetArray);
-    }
 
     async generateTasksList(includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
         this.tasksList.length = 0;
@@ -361,6 +362,7 @@ export class ObsidianTaskAdapter {
             start: undefined,
             completion: undefined,
             dates: new Map(),
+            stfAlias: NON_STF_TASK,
         };
         return taskItem;
     }
