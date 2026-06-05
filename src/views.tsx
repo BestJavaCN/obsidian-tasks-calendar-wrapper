@@ -338,10 +338,14 @@ export class TasksTimelineView extends BaseTasksView {
         const existingPaths = new Set(existingTasks.map(t => t.path));
 
         for (const stf of enabledFiles) {
-            if (existingPaths.has(stf.path)) continue; // Already parsed by generateTasksList
-
             const file = this.app.vault.getAbstractFileByPath(stf.path);
-            if (!(file instanceof TFile)) continue;
+            if (!(file instanceof TFile)) {
+                console.warn(`Specific task file not found in vault: ${stf.path}`);
+                continue;
+            }
+            // Use vault-normalized path for comparison
+            if (existingPaths.has(file.path)) continue; // Already parsed by generateTasksList
+
             try {
                 await this.adapter.parseFileIntoTaskList(file);
             } catch (e) {
@@ -372,11 +376,21 @@ export class TasksTimelineView extends BaseTasksView {
             return;
         }
 
-        // Build a map of path -> alias for O(1) lookup
+        // Build a map of path -> alias for O(1) lookup.
+        // Normalize paths through Obsidian's file system to handle
+        // user-entered paths that may differ from vault-normalized paths
+        // (e.g. missing .md extension, backslashes, wrong case).
         const pathToAlias = new Map<string, string>();
         for (const stf of specificTaskFiles) {
             if (stf.enabled && stf.path) {
-                pathToAlias.set(stf.path, stf.alias || stf.path);
+                const alias = stf.alias || stf.path;
+                // Try to resolve the actual file path from the vault
+                const file = this.app.vault.getAbstractFileByPath(stf.path);
+                if (file) {
+                    pathToAlias.set(file.path, alias);
+                }
+                // Also store the raw path as fallback (for backward compatibility)
+                pathToAlias.set(stf.path, alias);
             }
         }
 

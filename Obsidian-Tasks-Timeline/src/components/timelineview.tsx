@@ -94,13 +94,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                     stf => stf.enabled && stf.path && (stf.alias || stf.path) === this.state.activeSpecificTaskFile
                 );
             }
-            if (isValid) {
-                // STF is valid in config, but check if it still has displayable tasks
-                const stfDerived = this.computeSTFDerivedData(this.state.activeSpecificTaskFile);
-                if (!stfDerived) {
-                    this.setState({ activeSpecificTaskFile: "" });
-                }
-            } else {
+            if (!isValid) {
                 this.setState({ activeSpecificTaskFile: "" });
             }
         }
@@ -334,6 +328,44 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         return this.computeDerivedData(stfTasks, this.props.userOptions, true);
     }
 
+    /**
+     * Compute derived data for native counter filters (todo/overdue/unplanned).
+     * Uses data-based filtering instead of CSS-based hiding, significantly
+     * reducing DOM element count and improving render performance.
+     */
+    private computeFilteredDerivedData(filter: string): DerivedData {
+        const taskList = this.props.taskList;
+        let filteredTasks: TaskDataModel[];
+
+        switch (filter) {
+            case 'todoFilter':
+                // Todo: non-STF tasks that are not overdue, done, cancelled, or unplanned
+                filteredTasks = taskList.filter(t =>
+                    (t.stfAlias === NON_STF_TASK || t.status === TaskStatus.overdue) &&
+                    t.status !== TaskStatus.overdue &&
+                    t.status !== TaskStatus.done &&
+                    t.status !== TaskStatus.cancelled &&
+                    t.status !== TaskStatus.unplanned
+                );
+                break;
+            case 'overdueFilter':
+                // Overdue: all tasks (including STF) with overdue status
+                filteredTasks = taskList.filter(t => t.status === TaskStatus.overdue);
+                break;
+            case 'unplannedFilter':
+                // Unplanned: non-STF tasks with unplanned status
+                filteredTasks = taskList.filter(t =>
+                    t.stfAlias === NON_STF_TASK &&
+                    t.status === TaskStatus.unplanned
+                );
+                break;
+            default:
+                return this.getDerivedData();
+        }
+
+        return this.computeDerivedData(filteredTasks, this.props.userOptions, true);
+    }
+
     render(): React.ReactNode {
         const derived = this.getDerivedData();
 
@@ -341,16 +373,14 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         derived.userOptionContextValue.counters = derived.counters;
         derived.userOptionContextValue.stfCounters = derived.stfCounters;
 
-        const counterFilter = this.state.filter.length === 0 ? "" :
-            this.state.filter + " " + this.props.userOptions.counterBehavior;
         const todayFocus = this.state.todayFocus ? "todayFocus" : "";
 
         const activeSpecificTaskFile = this.state.activeSpecificTaskFile;
         const stfFilter = activeSpecificTaskFile ? "stfFilter" : "";
+        const filterClass = this.state.filter ? this.state.filter : "";
 
-        // When a specific task file is active, compute derived data from only
-        // the matching STF tasks (excluding overdue/completed/cancelled).
-        // This uses the unified taskList as the single source of truth.
+        // Use data-based filtering for both native counters and STF,
+        // significantly reducing DOM element count vs CSS-based filtering.
         let taskListContexts = derived.taskListContexts;
         let stfCounters = derived.stfCounters;
         if (activeSpecificTaskFile) {
@@ -360,9 +390,20 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                 // Show STF counters when STF is active too
                 stfCounters = stfDerived.stfCounters;
             } else {
-                // STF has no displayable tasks - fall back to main view while componentDidUpdate resets the state
-                taskListContexts = derived.taskListContexts;
+                // STF has no displayable tasks - show empty task list
+                taskListContexts = [{
+                    year: moment().year(),
+                    value: {
+                        taskList: [] as TaskDataModel[],
+                        entryOnDate: moment().format(innerDateFormat),
+                        involvedDates: [] as string[],
+                    },
+                }];
             }
+        } else if (this.state.filter) {
+            // Native counter filter (todo/overdue/unplanned) - use data-based filtering
+            const filteredDerived = this.computeFilteredDerivedData(this.state.filter);
+            taskListContexts = filteredDerived.taskListContexts;
         }
 
         // Inject dynamic state into context value
@@ -373,7 +414,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         };
 
         return (
-            <div className={`taskido ${derived.styles} ${counterFilter} ${todayFocus} ${stfFilter}`}
+            <div className={`taskido ${derived.styles} ${todayFocus} ${stfFilter} ${filterClass}`}
                 id={`taskido${(new Date()).getTime()}`}>
                 <TodayFocusEventHandlersContext.Provider value={{ handleTodayFocusClick: this.handleTodayFocus }}>
                     <UserOptionContext.Provider value={contextValue}>
