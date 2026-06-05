@@ -85,6 +85,27 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         this.setState({ todayFocus: !this.state.todayFocus });
     }
 
+    componentDidUpdate(prevProps: TimelineProps, prevState: TimelineStates) {
+        if (this.state.activeSpecificTaskFile) {
+            const userOptions = this.props.userOptions;
+            let isValid = false;
+            if (userOptions.useSpecificTaskFiles && userOptions.specificTaskFiles) {
+                isValid = userOptions.specificTaskFiles.some(
+                    stf => stf.enabled && stf.path && (stf.alias || stf.path) === this.state.activeSpecificTaskFile
+                );
+            }
+            if (isValid) {
+                // STF is valid in config, but check if it still has displayable tasks
+                const stfDerived = this.computeSTFDerivedData(this.state.activeSpecificTaskFile);
+                if (!stfDerived) {
+                    this.setState({ activeSpecificTaskFile: "" });
+                }
+            } else {
+                this.setState({ activeSpecificTaskFile: "" });
+            }
+        }
+    }
+
     private computeDerivedData(taskList: TaskDataModel[], userOptions: UserOption, isSTFContext: boolean = false): DerivedData {
         // Main task list: exclude non-overdue STF tasks.
         // STF tasks only appear in their own STF panels and the Overdue panel.
@@ -118,15 +139,16 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         }
 
         // Count todo/unplanned/completed/cancelled from mainTaskList only
+        let todoCount = 0;
         for (const t of mainTaskList) {
             switch (t.status) {
                 case TaskStatus.unplanned: unplannedCount++; break;
                 case TaskStatus.done: completedCount++; break;
                 case TaskStatus.cancelled: cancelledCount++; break;
+                case TaskStatus.overdue: break;
+                default: todoCount++; break;
             }
         }
-
-        const todoCount = mainTaskList.length - unplannedCount - completedCount - cancelledCount;
 
         const todayStr = moment().format(innerDateFormat);
         involvedDates.add(todayStr);
@@ -338,8 +360,8 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
                 // Show STF counters when STF is active too
                 stfCounters = stfDerived.stfCounters;
             } else {
-                // STF has no displayable tasks - show empty view
-                taskListContexts = [];
+                // STF has no displayable tasks - fall back to main view while componentDidUpdate resets the state
+                taskListContexts = derived.taskListContexts;
             }
         }
 
