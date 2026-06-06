@@ -202,13 +202,31 @@ export class TasksTimelineView extends BaseTasksView {
                 // 优先使用 onFileChanged 回调缓存的 data/cache，零 I/O 同步提取任务
                 const cached = this.fileCacheMap.get(filePath);
                 if (cached) {
-                    adapter.replaceFileTasksFast(filePath, cached.data, cached.cache);
+                    // 快速路径也需要检查文件级过滤条件，避免非匹配文件中的 task 泄漏
+                    // STF 文件即使不匹配常规过滤条件也应被加载
+                    const isSTFFile = this.isEnabledSTFFile(file.path);
+                    if (isSTFFile || adapter.fileMatchesFilters(file, fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter)) {
+                        adapter.replaceFileTasksFast(filePath, cached.data, cached.cache);
+                    } else {
+                        // 文件不匹配过滤条件，仅移除旧 task
+                        adapter.removeFileTasks(filePath);
+                    }
                 } else {
                     // 兜底：没有缓存时走异步 I/O 路径
-                    await adapter.updateFileTasks(
-                        file, fileIncludeFilter, fileExcludeFilter,
-                        fileIncludeTagsFilter, fileExcludeTagsFilter
-                    );
+                    // STF 文件即使不匹配常规过滤条件也应被加载
+                    const isSTFFile = this.isEnabledSTFFile(file.path);
+                    if (isSTFFile) {
+                        // STF file: remove old tasks and re-parse without filter checks
+                        adapter.removeFileTasks(filePath);
+                        await adapter.parseFileIntoTaskList(file);
+                    } else if (adapter.fileMatchesFilters(file, fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter)) {
+                        await adapter.updateFileTasks(
+                            file, fileIncludeFilter, fileExcludeFilter,
+                            fileIncludeTagsFilter, fileExcludeTagsFilter
+                        );
+                    } else {
+                        adapter.removeFileTasks(filePath);
+                    }
                 }
             }
             // 处理完毕，清除已使用的缓存
@@ -380,6 +398,26 @@ export class TasksTimelineView extends BaseTasksView {
 
         for (const stf of specificTaskFiles) {
             if (!stf.enabled && stf.path) {
+                const file = this.app.vault.getAbstractFileByPath(stf.path);
+                if (file?.path === filePath) return true;
+                if (stf.path === filePath) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if a file path belongs to an enabled STF (configured as STF and currently enabled).
+     */
+    private isEnabledSTFFile(filePath: string): boolean {
+        const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        if (!useSpecificTaskFiles) return false;
+
+        const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
+        if (!specificTaskFiles || specificTaskFiles.length === 0) return false;
+
+        for (const stf of specificTaskFiles) {
+            if (stf.enabled && stf.path) {
                 const file = this.app.vault.getAbstractFileByPath(stf.path);
                 if (file?.path === filePath) return true;
                 if (stf.path === filePath) return true;
