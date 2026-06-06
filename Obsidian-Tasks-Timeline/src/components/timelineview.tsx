@@ -87,7 +87,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
 
     componentDidUpdate(prevProps: TimelineProps, prevState: TimelineStates) {
         if (this.state.activeSpecificTaskFile) {
-            const stfFileMap = (this.props.userOptions as any).stfFileMap as Record<string, string[]> | undefined;
+            const stfFileMap = this.props.userOptions.stfFileMap;
             const isValid = stfFileMap ? this.state.activeSpecificTaskFile in stfFileMap : false;
             if (!isValid) {
                 this.setState({ activeSpecificTaskFile: "" });
@@ -274,7 +274,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         taskList: TaskDataModel[],
         userOptions: UserOption
     ): Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }> {
-        const stfFileMap = (userOptions as any).stfFileMap as Record<string, string[]> | undefined;
+        const stfFileMap = userOptions.stfFileMap;
         if (!stfFileMap || Object.keys(stfFileMap).length === 0) return [];
 
         // Build reverse index: file path → task count (excluding done/cancelled/overdue)
@@ -308,6 +308,8 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     private getDerivedData(): DerivedData {
         const taskList = this.props.taskList;
         const userOptions = this.props.userOptions;
+        // Use reference comparison: when taskList is a new array (e.g. after optimistic update),
+        // recompute derived data to reflect updated task statuses.
         if (this.lastTaskListRef !== taskList || this.lastUserOptionsRef !== userOptions) {
             this.lastTaskListRef = taskList;
             this.lastUserOptionsRef = userOptions;
@@ -324,7 +326,7 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
      * pointing to different files to aggregate all files' tasks in one panel.
      */
     private computeSTFDerivedData(stfAlias: string): DerivedData | null {
-        const stfFileMap = (this.props.userOptions as any).stfFileMap as Record<string, string[]> | undefined;
+        const stfFileMap = this.props.userOptions.stfFileMap;
         if (!stfFileMap) return null;
 
         const filePaths = new Set(stfFileMap[stfAlias] || []);
@@ -395,13 +397,10 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         // Use data-based filtering for both native counters and STF,
         // significantly reducing DOM element count vs CSS-based filtering.
         let taskListContexts = derived.taskListContexts;
-        let stfCounters = derived.stfCounters;
         if (activeSpecificTaskFile) {
             const stfDerived = this.computeSTFDerivedData(activeSpecificTaskFile);
             if (stfDerived) {
                 taskListContexts = stfDerived.taskListContexts;
-                // Show STF counters when STF is active too
-                stfCounters = stfDerived.stfCounters;
             } else {
                 // STF has no displayable tasks - show empty task list
                 taskListContexts = [{

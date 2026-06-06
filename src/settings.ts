@@ -210,6 +210,11 @@ export const defaultUserOptions = {
 	 * Specific task files list
 	 */
 	specificTaskFiles: [] as SpecificTaskFile[],
+	/**
+	 * Internal: canonical STF alias→file-paths mapping used by the UI.
+	 * Not persisted to disk; computed at runtime.
+	 */
+	stfFileMap: {} as Record<string, string[]>,
 };
 export type UserOption = typeof defaultUserOptions;
 
@@ -772,6 +777,13 @@ export class TasksCalendarSettingTab extends PluginSettingTab {
                         this.plugin.userOptions.specificTaskFiles[index].path = v.trim();
                         await this.onOptionUpdate({}, false);
                     });
+                    // Validate path existence
+                    if (stf.path && !this.plugin.app.vault.getAbstractFileByPath(stf.path)) {
+                        t.inputEl.style.borderColor = "var(--text-error)";
+                        t.inputEl.title = stf.path
+                            ? `File not found: ${stf.path}`
+                            : "";
+                    }
                 });
 
             new Setting(itemDiv)

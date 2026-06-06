@@ -5,7 +5,7 @@ import * as React from 'react';
 import { UserOption, defaultUserOptions } from '../../src/settings';
 import { t, Language, formatNoSuchFile, formatErrorOpeningFile, formatSomethingWentWrong, formatTemplateFileNotFound, formatErrorCreatingFileTemplater, formatErrorCreatingFile, formatErrorWritingTask, formatErrorReadingFile } from '../../src/i18n';
 import * as TaskMapable from '../../utils/taskmapable';
-import { TaskDataModel, TaskRegularExpressions } from '../../utils/tasks';
+import { TaskDataModel, TaskRegularExpressions, updateTaskStatusMarker } from '../../utils/tasks';
 import { QuickEntryHandlerContext, TaskItemEventHandlersContext } from './components/context';
 import { TimelineView } from './components/timelineview';
 
@@ -337,18 +337,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                     const newMarker = regexMatch[3];
                     const taskList: TaskDataModel[] = this.props.taskListModel.get("taskList");
                     if (taskList) {
-                        const updatedTasks = taskList.map(task => {
-                            if (task.path === path && task.position.start.line === position.start.line) {
-                                return {
-                                    ...task,
-                                    statusMarker: newMarker,
-                                    checked: true,
-                                    completed: newMarker === 'x',
-                                    fullyCompleted: newMarker !== ' ',
-                                };
-                            }
-                            return task;
-                        });
+                        const updatedTasks = updateTaskStatusMarker(taskList, path, position.start.line, newMarker);
                         this.props.taskListModel.set({ taskList: updatedTasks });
                     }
                 }

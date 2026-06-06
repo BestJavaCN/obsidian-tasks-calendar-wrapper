@@ -188,4 +188,31 @@ export interface TaskDataModel extends STask {
 /** Default value for stfAlias for tasks not belonging to any STF */
 export const NON_STF_TASK = "Non_STF_Task";
 
+/**
+ * Optimistically update a task's status marker in the task list.
+ * Returns a new array with the updated task, or the original array if no task matched.
+ * Used by both editor-change handler and handleCompleteTask for instant UI feedback.
+ */
+export function updateTaskStatusMarker(
+    taskList: TaskDataModel[],
+    filePath: string,
+    line: number,
+    newMarker: string
+): TaskDataModel[] {
+    return taskList.map(task => {
+        if (task.path === filePath && task.position.start.line === line) {
+            const markerStatus = (TaskStatusMarkerMap as Record<string, string>)[newMarker];
+            return {
+                ...task,
+                statusMarker: newMarker,
+                status: markerStatus || task.status,
+                checked: true,
+                completed: newMarker === 'x',
+                fullyCompleted: newMarker !== ' ',
+            };
+        }
+        return task;
+    });
+}
+
 

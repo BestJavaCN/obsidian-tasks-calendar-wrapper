@@ -4,7 +4,7 @@ import { ObsidianBridge } from 'Obsidian-Tasks-Timeline/src/obsidianbridge';
 import { ObsidianTaskAdapter } from "Obsidian-Tasks-Timeline/src/taskadapter";
 import { createRoot, Root } from 'react-dom/client';
 import * as TaskMapable from 'utils/taskmapable';
-import { TaskDataModel, TaskStatus, TaskStatusMarkerMap, TaskRegularExpressions, NON_STF_TASK } from "utils/tasks";
+import { TaskDataModel, TaskStatus, TaskStatusMarkerMap, TaskRegularExpressions, NON_STF_TASK, updateTaskStatusMarker } from "utils/tasks";
 import { defaultUserOptions, SpecificTaskFile, UserOption } from "./settings";
 import { t } from "./i18n";
 
@@ -81,6 +81,10 @@ export class TasksTimelineView extends BaseTasksView {
             this.debounceTimer = null;
         }
         this.taskStatusMap.clear();
+        this.fileCacheMap.clear();
+        if (TasksTimelineView.view === this) {
+            TasksTimelineView.view = null;
+        }
     }
 
     onUpdateOptions(opt: UserOption) {
@@ -133,18 +137,7 @@ export class TasksTimelineView extends BaseTasksView {
         const modelList: TaskDataModel[] = this.taskListModel.get("taskList") as TaskDataModel[];
         if (!modelList) return;
 
-        const updatedTasks = modelList.map(task => {
-            if (task.path === filePath && task.position.start.line === cursor.line) {
-                return {
-                    ...task,
-                    statusMarker: newMarker,
-                    checked: true,
-                    completed: newMarker === 'x',
-                    fullyCompleted: newMarker !== ' ',
-                };
-            }
-            return task;
-        });
+        const updatedTasks = updateTaskStatusMarker(modelList, filePath, cursor.line, newMarker);
 
         this.taskListModel.set({ taskList: updatedTasks });
         this.taskStatusMap.set(key, newMarker);
@@ -388,6 +381,7 @@ export class TasksTimelineView extends BaseTasksView {
 
     /**
      * Check if a file path belongs to a disabled STF (configured as STF but currently not enabled).
+     * Uses vault-normalized paths for reliable comparison, with fallback for unresolved paths.
      */
     private isDisabledSTFFile(filePath: string): boolean {
         const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
@@ -398,9 +392,7 @@ export class TasksTimelineView extends BaseTasksView {
 
         for (const stf of specificTaskFiles) {
             if (!stf.enabled && stf.path) {
-                const file = this.app.vault.getAbstractFileByPath(stf.path);
-                if (file?.path === filePath) return true;
-                if (stf.path === filePath) return true;
+                if (this.stfPathMatches(stf.path, filePath)) return true;
             }
         }
         return false;
@@ -408,6 +400,7 @@ export class TasksTimelineView extends BaseTasksView {
 
     /**
      * Check if a file path belongs to an enabled STF (configured as STF and currently enabled).
+     * Uses vault-normalized paths for reliable comparison, with fallback for unresolved paths.
      */
     private isEnabledSTFFile(filePath: string): boolean {
         const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
@@ -418,11 +411,24 @@ export class TasksTimelineView extends BaseTasksView {
 
         for (const stf of specificTaskFiles) {
             if (stf.enabled && stf.path) {
-                const file = this.app.vault.getAbstractFileByPath(stf.path);
-                if (file?.path === filePath) return true;
-                if (stf.path === filePath) return true;
+                if (this.stfPathMatches(stf.path, filePath)) return true;
             }
         }
+        return false;
+    }
+
+    /**
+     * Match a user-configured STF path against an actual vault file path.
+     * Normalizes through Obsidian's vault API for primary comparison,
+     * with fallback to trimmed string comparison and .md extension auto-completion.
+     */
+    private stfPathMatches(stfPath: string, filePath: string): boolean {
+        const file = this.app.vault.getAbstractFileByPath(stfPath);
+        if (file?.path === filePath) return true;
+        // Fallback: direct string comparison after normalization
+        if (stfPath === filePath) return true;
+        // Fallback: try with .md extension auto-completed
+        if (!stfPath.endsWith('.md') && (stfPath + '.md') === filePath) return true;
         return false;
     }
 
