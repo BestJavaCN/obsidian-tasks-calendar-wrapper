@@ -229,6 +229,9 @@ export class TasksTimelineView extends BaseTasksView {
             // Assign stfAlias to changed tasks (unchanged tasks already have correct aliases)
             this.assignSTFAliases(parsedChangedTasks);
 
+            // Build canonical STF alias→file-paths mapping for UI filtering
+            const stfFileMap = this.buildSTFFileMap();
+
             const allTasks = [...unchangedTasks, ...parsedChangedTasks];
 
             // Remove tasks from disabled STF files that are not covered by regular filters.
@@ -240,6 +243,7 @@ export class TasksTimelineView extends BaseTasksView {
 
             this.taskListModel.set({ taskList: filteredTasks });
             this.rebuildTaskStatusMap();
+            (this.userOptionModel as any).set({ stfFileMap: stfFileMap });
         } catch (reason) {
             new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
             console.error("Error reloading tasks:", reason);
@@ -304,6 +308,9 @@ export class TasksTimelineView extends BaseTasksView {
             // Assign stfAlias to all tasks based on STF configuration
             this.assignSTFAliases(allTasks);
 
+            // Build canonical STF alias→file-paths mapping for UI filtering
+            const stfFileMap = this.buildSTFFileMap();
+
             const tasks = await this.parseTasks(allTasks);
             const filteredTasks = this.filterTasks(tasks);
 
@@ -312,7 +319,7 @@ export class TasksTimelineView extends BaseTasksView {
                 taskList: filteredTasks,
             });
             this.rebuildTaskStatusMap();
-            this.userOptionModel.set({ taskFiles: taskfiles || [] });
+            (this.userOptionModel as any).set({ taskFiles: taskfiles || [], stfFileMap: stfFileMap });
 
         } catch (reason) {
             new Notice(t((this.userOptionModel.get("language") || "en") as "en" | "zh").errorGeneratingTasks + reason, 5000);
@@ -350,10 +357,11 @@ export class TasksTimelineView extends BaseTasksView {
                 continue;
             }
             // Use vault-normalized path for comparison
-            if (existingPaths.has(file.path)) continue; // Already parsed by generateTasksList
+            if (existingPaths.has(file.path)) continue; // Already parsed by generateTasksList or previous STF
 
             try {
                 await this.adapter.parseFileIntoTaskList(file);
+                existingPaths.add(file.path); // Track to prevent duplicate parsing of same file
             } catch (e) {
                 console.error(`Error parsing specific task file ${stf.path}:`, e);
             }
@@ -451,6 +459,43 @@ export class TasksTimelineView extends BaseTasksView {
         for (const task of taskList) {
             task.stfAlias = pathToAlias.get(task.path) || NON_STF_TASK;
         }
+    }
+
+    /**
+     * Build a canonical alias→file-paths mapping from enabled STF configuration.
+     * Multiple STF entries with the same alias are merged into one entry,
+     * aggregating all referenced file paths (deduplicated through vault normalization).
+     * This mapping is used by the UI for STF counter calculation and panel filtering.
+     */
+    private buildSTFFileMap(): Record<string, string[]> {
+        const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        if (!useSpecificTaskFiles) return {};
+
+        const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
+        if (!specificTaskFiles || specificTaskFiles.length === 0) return {};
+
+        const aliasToPaths = new Map<string, Set<string>>();
+
+        for (const stf of specificTaskFiles) {
+            if (!stf.enabled || !stf.path) continue;
+            const alias = stf.alias || stf.path;
+            if (!aliasToPaths.has(alias)) {
+                aliasToPaths.set(alias, new Set());
+            }
+            // Normalize path through vault
+            const file = this.app.vault.getAbstractFileByPath(stf.path);
+            if (file) {
+                aliasToPaths.get(alias)!.add(file.path);
+            } else {
+                aliasToPaths.get(alias)!.add(stf.path);
+            }
+        }
+
+        const result: Record<string, string[]> = {};
+        for (const [alias, paths] of aliasToPaths) {
+            result[alias] = [...paths];
+        }
+        return result;
     }
 
     /**

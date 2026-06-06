@@ -87,13 +87,8 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
 
     componentDidUpdate(prevProps: TimelineProps, prevState: TimelineStates) {
         if (this.state.activeSpecificTaskFile) {
-            const userOptions = this.props.userOptions;
-            let isValid = false;
-            if (userOptions.useSpecificTaskFiles && userOptions.specificTaskFiles) {
-                isValid = userOptions.specificTaskFiles.some(
-                    stf => stf.enabled && stf.path && (stf.alias || stf.path) === this.state.activeSpecificTaskFile
-                );
-            }
+            const stfFileMap = (this.props.userOptions as any).stfFileMap as Record<string, string[]> | undefined;
+            const isValid = stfFileMap ? this.state.activeSpecificTaskFile in stfFileMap : false;
             if (!isValid) {
                 this.setState({ activeSpecificTaskFile: "" });
             }
@@ -268,32 +263,41 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     }
 
     /**
-     * Compute STF counters from the unified task list.
-     * Each enabled STF gets a counter showing the count of its non-done, non-cancelled tasks.
+     * Compute STF counters from the canonical stfFileMap (alias→file paths).
+     * Each unique alias gets one counter. Tasks are counted by file path membership
+     * rather than per-task stfAlias, so that the same file referenced by multiple
+     * aliases contributes to each alias's count independently.
+     * Same-alias STF entries are merged: only one counter appears, aggregating all
+     * referenced files' tasks with deduplication.
      */
     private computeSTFCounters(
         taskList: TaskDataModel[],
         userOptions: UserOption
     ): Array<{ onClick: () => void; cnt: number; id: string; label: string; ariaLabel: string }> {
-        if (!userOptions.useSpecificTaskFiles || !userOptions.specificTaskFiles) return [];
+        const stfFileMap = (userOptions as any).stfFileMap as Record<string, string[]> | undefined;
+        if (!stfFileMap || Object.keys(stfFileMap).length === 0) return [];
 
-        const enabledSTFs = userOptions.specificTaskFiles.filter(f => f.enabled && f.path);
-        if (enabledSTFs.length === 0) return [];
-
-        // Count tasks by alias, excluding completed, cancelled, and overdue tasks
-        const aliasCounts = new Map<string, number>();
+        // Build reverse index: file path → task count (excluding done/cancelled/overdue)
+        const pathTaskCount = new Map<string, number>();
         for (const task of taskList) {
             if (task.stfAlias === NON_STF_TASK) continue;
             if (task.status === TaskStatus.done || task.status === TaskStatus.cancelled || task.status === TaskStatus.overdue) continue;
-            const count = aliasCounts.get(task.stfAlias) || 0;
-            aliasCounts.set(task.stfAlias, count + 1);
+            const count = pathTaskCount.get(task.path) || 0;
+            pathTaskCount.set(task.path, count + 1);
         }
 
-        return enabledSTFs.map(stf => {
-            const alias = stf.alias || stf.path;
+        return Object.entries(stfFileMap).map(([alias, filePaths]) => {
+            // Deduplicate: count each file's tasks exactly once
+            let cnt = 0;
+            const countedPaths = new Set<string>();
+            for (const filePath of filePaths) {
+                if (countedPaths.has(filePath)) continue;
+                countedPaths.add(filePath);
+                cnt += pathTaskCount.get(filePath) || 0;
+            }
             return {
                 onClick: () => this.handleSpecificTaskFileClick(alias),
-                cnt: aliasCounts.get(alias) || 0,
+                cnt,
                 id: `stf-${alias}`,
                 label: alias,
                 ariaLabel: alias,
@@ -314,12 +318,21 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
 
     /**
      * Compute derived data for a subset of tasks (used when STF filter is active).
-     * Uses the same computeDerivedData logic but with STF-filtered tasks.
+     * Filters tasks by file path membership in the STF's file set, rather than by
+     * per-task stfAlias. This allows multiple aliases pointing to the same file
+     * to each display that file's tasks independently, and same-alias entries
+     * pointing to different files to aggregate all files' tasks in one panel.
      */
     private computeSTFDerivedData(stfAlias: string): DerivedData | null {
+        const stfFileMap = (this.props.userOptions as any).stfFileMap as Record<string, string[]> | undefined;
+        if (!stfFileMap) return null;
+
+        const filePaths = new Set(stfFileMap[stfAlias] || []);
+        if (filePaths.size === 0) return null;
+
         const taskList = this.props.taskList;
         const stfTasks = taskList.filter(t =>
-            t.stfAlias === stfAlias &&
+            filePaths.has(t.path) &&
             t.status !== TaskStatus.overdue &&
             t.status !== TaskStatus.done &&
             t.status !== TaskStatus.cancelled
