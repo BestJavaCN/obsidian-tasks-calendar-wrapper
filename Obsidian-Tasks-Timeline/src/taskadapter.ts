@@ -28,7 +28,7 @@ export class ObsidianTaskAdapter {
         await this.parseFileIntoTarget(file, this.tasksList);
     }
 
-    private fileMatchesFilters(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]): boolean {
+    fileMatchesFilters(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]): boolean {
         if (includeFilter.length !== 0 && !this.includePathsFilter(includeFilter)(file)) return false;
         if (pathFilter.length !== 0 && !this.pathsFilter(pathFilter)(file)) return false;
         if (includeTags.length !== 0 && !this.fileIncludeTagsFilter(includeTags)(file)) return false;

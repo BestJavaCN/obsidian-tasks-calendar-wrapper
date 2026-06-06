@@ -230,7 +230,13 @@ export class TasksTimelineView extends BaseTasksView {
             this.assignSTFAliases(parsedChangedTasks);
 
             const allTasks = [...unchangedTasks, ...parsedChangedTasks];
-            const filteredTasks = this.filterTasks(allTasks);
+
+            // Remove tasks from disabled STF files that are not covered by regular filters.
+            // This prevents disabled STF tasks from leaking into regular panels
+            // when replaceFileTasksFast unconditionally re-adds them during incremental updates.
+            const validTasks = this.filterDisabledSTFTasks(allTasks, adapter);
+
+            const filteredTasks = this.filterTasks(validTasks);
 
             this.taskListModel.set({ taskList: filteredTasks });
             this.rebuildTaskStatusMap();
@@ -352,6 +358,54 @@ export class TasksTimelineView extends BaseTasksView {
                 console.error(`Error parsing specific task file ${stf.path}:`, e);
             }
         }
+    }
+
+    /**
+     * Check if a file path belongs to a disabled STF (configured as STF but currently not enabled).
+     */
+    private isDisabledSTFFile(filePath: string): boolean {
+        const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        if (!useSpecificTaskFiles) return false;
+
+        const specificTaskFiles = this.userOptionModel.get("specificTaskFiles") as SpecificTaskFile[];
+        if (!specificTaskFiles || specificTaskFiles.length === 0) return false;
+
+        for (const stf of specificTaskFiles) {
+            if (!stf.enabled && stf.path) {
+                const file = this.app.vault.getAbstractFileByPath(stf.path);
+                if (file?.path === filePath) return true;
+                if (stf.path === filePath) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Remove tasks from disabled STF files that are not covered by regular include/exclude filters.
+     * This prevents disabled STF tasks from leaking into regular panels during incremental updates.
+     */
+    private filterDisabledSTFTasks(taskList: TaskDataModel[], adapter: ObsidianTaskAdapter): TaskDataModel[] {
+        const useSpecificTaskFiles = this.userOptionModel.get("useSpecificTaskFiles");
+        if (!useSpecificTaskFiles) return taskList;
+
+        const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
+        const fileExcludeFilter = this.userOptionModel.get("excludePaths") || [];
+        const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
+        const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+
+        return taskList.filter(task => {
+            if (!this.isDisabledSTFFile(task.path)) return true;
+            // If the file matches regular filters, keep it (it should appear as a regular task)
+            const file = this.app.vault.getAbstractFileByPath(task.path);
+            if (file instanceof TFile && adapter.fileMatchesFilters(
+                file, fileIncludeFilter, fileExcludeFilter,
+                fileIncludeTagsFilter, fileExcludeTagsFilter
+            )) {
+                return true;
+            }
+            // Disabled STF file not covered by regular filters → remove
+            return false;
+        });
     }
 
     /**
