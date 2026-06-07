@@ -455,6 +455,9 @@ export class TasksTimelineView extends BaseTasksView {
         const fileExcludeFilter = this.userOptionModel.get("excludePaths") || [];
         const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
         const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+        const dailyNoteFolder = this.userOptionModel.get("dailyNoteFolder") || '';
+        const dailyNoteFormat = this.userOptionModel.get("dailyNoteFormat") || '';
+        const dailyNotePeriod = this.userOptionModel.get("dailyNotePeriod") || 0;
 
         return taskList.filter(task => {
             if (!this.isDisabledSTFFile(task.path)) return true;
@@ -462,7 +465,8 @@ export class TasksTimelineView extends BaseTasksView {
             const file = this.app.vault.getAbstractFileByPath(task.path);
             if (file instanceof TFile && adapter.fileMatchesFilters(
                 file, fileIncludeFilter, fileExcludeFilter,
-                fileIncludeTagsFilter, fileExcludeTagsFilter
+                fileIncludeTagsFilter, fileExcludeTagsFilter,
+                dailyNoteFolder, dailyNoteFormat, dailyNotePeriod
             )) {
                 return true;
             }
