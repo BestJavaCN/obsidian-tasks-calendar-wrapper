@@ -96,10 +96,14 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
     }
 
     private computeDerivedData(taskList: TaskDataModel[], userOptions: UserOption, isSTFContext: boolean = false): DerivedData {
-        // Main task list: exclude non-overdue STF tasks.
-        // STF tasks only appear in their own STF panels and the Overdue panel.
-        // When computing for an STF context, all tasks in the list are already STF-filtered.
-        const mainTaskList = isSTFContext
+        // When no filter is active (isSTFContext = false), show all tasks including STF tasks.
+        // When a panel filter is active (isSTFContext = true), the taskList is already pre-filtered
+        // by the caller (computeFilteredDerivedData / computeSTFDerivedData).
+        const displayTaskList = taskList;
+
+        // Counter list: exclude non-overdue STF tasks so panel counters remain consistent
+        // with what the panels actually display when clicked.
+        const counterTaskList = isSTFContext
             ? taskList
             : taskList.filter(t =>
                 t.stfAlias === NON_STF_TASK || t.status === TaskStatus.overdue
@@ -127,9 +131,9 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
             if (t.status === TaskStatus.overdue) overdueCount++;
         }
 
-        // Count todo/unplanned/completed/cancelled from mainTaskList only
+        // Count todo/unplanned/completed/cancelled from counterTaskList (excludes non-overdue STF)
         let todoCount = 0;
-        for (const t of mainTaskList) {
+        for (const t of counterTaskList) {
             switch (t.status) {
                 case TaskStatus.unplanned: unplannedCount++; break;
                 case TaskStatus.done: completedCount++; break;
@@ -149,12 +153,12 @@ export class TimelineView extends React.Component<TimelineProps, TimelineStates>
         const latestYear = +moment(lastDay).format("YYYY");
         const years = Array.from({ length: latestYear - earliestYear + 1 }, (_, i) => i + earliestYear);
 
-        // Preview calculations grouped by year (using mainTaskList for Todo/Overdue/Unplanned view)
+        // Preview calculations grouped by year (using displayTaskList to include STF tasks in default view)
         const tasksByYear = new Map<number, TaskDataModel[]>();
         const datesByYear = new Map<number, string[]>();
         for (const y of years) {
             const yearMoment = moment().year(y);
-            tasksByYear.set(y, mainTaskList.filter(TaskMapable.filterYear(yearMoment)));
+            tasksByYear.set(y, displayTaskList.filter(TaskMapable.filterYear(yearMoment)));
             datesByYear.set(y, sortedDates.filter(d => moment(d).year() === y));
         }
 
