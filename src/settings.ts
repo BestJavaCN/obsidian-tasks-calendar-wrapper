@@ -74,6 +74,10 @@ export const defaultUserOptions = {
      * daily note file format */
     dailyNoteFormat: 'YYYY, MMMM DD - dddd' as string,
     /**
+     * Only load daily notes within this period (in days).
+     * 0 = unlimited, N = only load daily notes dated within the last N days. */
+    dailyNotePeriod: 0 as number,
+    /**
      * specify under which section the new task items should be appended.  */
     sectionForNewTasks: "## Tasks" as string,
     /**
@@ -354,6 +358,21 @@ export class TasksCalendarSettingTab extends PluginSettingTab {
             .addMomentFormat(m => {
                 m.setValue(this.plugin.userOptions.dailyNoteFormat);
                 m.onChange(async v => await this.onOptionUpdate({ dailyNoteFormat: v }));
+            })
+
+        new Setting(containerEl)
+            .setName(tr.dailyNotePeriod)
+            .setDesc(tr.dailyNotePeriodDesc)
+            .addDropdown(d => {
+                d.addOptions({
+                    "0": tr.dailyNotePeriodUnlimited,
+                    "30": tr.dailyNotePeriod30,
+                    "90": tr.dailyNotePeriod90,
+                    "180": tr.dailyNotePeriod180,
+                    "360": tr.dailyNotePeriod360,
+                })
+                d.setValue(this.plugin.userOptions.dailyNotePeriod.toString());
+                d.onChange(async v => await this.onOptionUpdate({ dailyNotePeriod: parseInt(v) }));
             })
 
         new Setting(containerEl)

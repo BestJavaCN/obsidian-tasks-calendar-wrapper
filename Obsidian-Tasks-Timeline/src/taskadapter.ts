@@ -1,4 +1,4 @@
-import { App, CachedMetadata, FrontMatterCache, LinkCache, ListItemCache, Pos, SectionCache, TagCache, TFile } from "obsidian";
+import { App, CachedMetadata, FrontMatterCache, LinkCache, ListItemCache, moment, Pos, SectionCache, TagCache, TFile } from "obsidian";
 import { Link } from "../../dataview-util/markdown";
 import { NON_STF_TASK, TaskDataModel, TaskRegularExpressions } from "../../utils/tasks";
 
@@ -28,11 +28,14 @@ export class ObsidianTaskAdapter {
         await this.parseFileIntoTarget(file, this.tasksList);
     }
 
-    fileMatchesFilters(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]): boolean {
+    fileMatchesFilters(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[], dailyNoteFolder: string = '', dailyNoteFormat: string = '', dailyNotePeriod: number = 0): boolean {
         if (includeFilter.length !== 0 && !this.includePathsFilter(includeFilter)(file)) return false;
         if (pathFilter.length !== 0 && !this.pathsFilter(pathFilter)(file)) return false;
         if (includeTags.length !== 0 && !this.fileIncludeTagsFilter(includeTags)(file)) return false;
         if (excludeTags.length !== 0 && !this.fileExcludeTagsFilter(excludeTags)(file)) return false;
+        if (dailyNotePeriod > 0 && dailyNoteFolder.length > 0) {
+            if (!this.dailyNoteFileFilter(dailyNoteFolder, dailyNoteFormat, dailyNotePeriod)(file)) return false;
+        }
         return true;
     }
 
@@ -93,7 +96,61 @@ export class ObsidianTaskAdapter {
     }
 
 
-    async generateTasksList(includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
+    /**
+     * Create a filter function that excludes daily notes older than the specified period.
+     * This runs at the file level before any I/O, maximizing performance.
+     * @param dailyNoteFolder The folder where daily notes are stored (empty = no filtering)
+     * @param dailyNoteFormat The moment.js format string for parsing daily note filenames
+     * @param dailyNotePeriod The maximum age in days (0 = unlimited, no filtering)
+     */
+    dailyNoteFileFilter(dailyNoteFolder: string, dailyNoteFormat: string, dailyNotePeriod: number) {
+        if (dailyNotePeriod === 0 || !dailyNoteFolder) {
+            return (_file: TFile) => true;
+        }
+
+        const normalizedFolder = dailyNoteFolder.replace(/\/$/, '');
+        const cutoff = moment().startOf('day').subtract(dailyNotePeriod, 'days');
+
+        return (file: TFile) => {
+            const filePath = file.path.replace(/\\/g, '/');
+            if (!filePath.startsWith(normalizedFolder + '/')) {
+                return true; // Not a daily note, keep it
+            }
+
+            // Extract filename portion after folder
+            let pathToParse = filePath.substring((normalizedFolder + '/').length);
+            if (pathToParse.endsWith('.md')) {
+                pathToParse = pathToParse.substring(0, pathToParse.length - 3);
+            }
+
+            const date = moment(pathToParse, dailyNoteFormat, true);
+            if (!date.isValid()) {
+                // Also try parsing just the filename (last segment)
+                const segments = pathToParse.split('/');
+                const filename = segments[segments.length - 1];
+                if (filename !== pathToParse) {
+                    const altDate = moment(filename, dailyNoteFormat, true);
+                    if (altDate.isValid()) {
+                        return !altDate.isBefore(cutoff, 'day');
+                    }
+                }
+                return false; // Can't parse date, skip it
+            }
+
+            // Keep if the date is on or after the cutoff (including future dates)
+            return !date.isBefore(cutoff, 'day');
+        };
+    }
+
+    async generateTasksList(
+        includeFilter: string[],
+        pathFilter: string[],
+        includeTags: string[],
+        excludeTags: string[],
+        dailyNoteFolder: string = '',
+        dailyNoteFormat: string = '',
+        dailyNotePeriod: number = 0
+    ) {
         this.tasksList.length = 0;
         const files = this.app.vault.getMarkdownFiles();
 
@@ -101,14 +158,19 @@ export class ObsidianTaskAdapter {
         const hasPathFilter = pathFilter.length !== 0;
         const hasIncludeTags = includeTags.length !== 0;
         const hasExcludeTags = excludeTags.length !== 0;
+        const hasDailyNoteFilter = dailyNotePeriod > 0 && dailyNoteFolder.length > 0;
+
+        const dailyNoteFilter = this.dailyNoteFileFilter(dailyNoteFolder, dailyNoteFormat, dailyNotePeriod);
 
         // 合并多个 filter 为单次遍历，避免创建中间数组
-        const filteredFiles = (hasIncludeFilter || hasPathFilter || hasIncludeTags || hasExcludeTags)
+        const hasAnyFilter = hasIncludeFilter || hasPathFilter || hasIncludeTags || hasExcludeTags || hasDailyNoteFilter;
+        const filteredFiles = hasAnyFilter
             ? files.filter(file => {
                 if (hasIncludeFilter && !this.includePathsFilter(includeFilter)(file)) return false;
                 if (hasPathFilter && !this.pathsFilter(pathFilter)(file)) return false;
                 if (hasIncludeTags && !this.fileIncludeTagsFilter(includeTags)(file)) return false;
                 if (hasExcludeTags && !this.fileExcludeTagsFilter(excludeTags)(file)) return false;
+                if (hasDailyNoteFilter && !dailyNoteFilter(file)) return false;
                 return true;
             })
             : files;
@@ -127,11 +189,11 @@ export class ObsidianTaskAdapter {
      * 增量更新单个文件的任务：移除该文件旧任务，重新解析并加入新任务。
      * 如果文件不匹配当前过滤条件，则仅移除旧任务。
      */
-    async updateFileTasks(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[]) {
+    async updateFileTasks(file: TFile, includeFilter: string[], pathFilter: string[], includeTags: string[], excludeTags: string[], dailyNoteFolder: string = '', dailyNoteFormat: string = '', dailyNotePeriod: number = 0) {
         // 移除该文件的旧任务
         this.tasksList = this.tasksList.filter(t => t.path !== file.path);
 
-        if (!this.fileMatchesFilters(file, includeFilter, pathFilter, includeTags, excludeTags)) return;
+        if (!this.fileMatchesFilters(file, includeFilter, pathFilter, includeTags, excludeTags, dailyNoteFolder, dailyNoteFormat, dailyNotePeriod)) return;
 
         const newTasks: TaskDataModel[] = [];
         await this.parseFileIntoTarget(file, newTasks);

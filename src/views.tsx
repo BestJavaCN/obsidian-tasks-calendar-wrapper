@@ -187,6 +187,9 @@ export class TasksTimelineView extends BaseTasksView {
             const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
             const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
             const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+            const dailyNoteFolder = this.userOptionModel.get("dailyNoteFolder") || '';
+            const dailyNoteFormat = this.userOptionModel.get("dailyNoteFormat") || '';
+            const dailyNotePeriod = this.userOptionModel.get("dailyNotePeriod") || 0;
 
             for (const filePath of files) {
                 const file = this.app.vault.getAbstractFileByPath(filePath);
@@ -198,7 +201,7 @@ export class TasksTimelineView extends BaseTasksView {
                     // 快速路径也需要检查文件级过滤条件，避免非匹配文件中的 task 泄漏
                     // STF 文件即使不匹配常规过滤条件也应被加载
                     const isSTFFile = this.isEnabledSTFFile(file.path);
-                    if (isSTFFile || adapter.fileMatchesFilters(file, fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter)) {
+                    if (isSTFFile || adapter.fileMatchesFilters(file, fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter, dailyNoteFolder, dailyNoteFormat, dailyNotePeriod)) {
                         adapter.replaceFileTasksFast(filePath, cached.data, cached.cache);
                     } else {
                         // 文件不匹配过滤条件，仅移除旧 task
@@ -212,10 +215,11 @@ export class TasksTimelineView extends BaseTasksView {
                         // STF file: remove old tasks and re-parse without filter checks
                         adapter.removeFileTasks(filePath);
                         await adapter.parseFileIntoTaskList(file);
-                    } else if (adapter.fileMatchesFilters(file, fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter)) {
+                    } else if (adapter.fileMatchesFilters(file, fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter, dailyNoteFolder, dailyNoteFormat, dailyNotePeriod)) {
                         await adapter.updateFileTasks(
                             file, fileIncludeFilter, fileExcludeFilter,
-                            fileIncludeTagsFilter, fileExcludeTagsFilter
+                            fileIncludeTagsFilter, fileExcludeTagsFilter,
+                            dailyNoteFolder, dailyNoteFormat, dailyNotePeriod
                         );
                     } else {
                         adapter.removeFileTasks(filePath);
@@ -308,8 +312,15 @@ export class TasksTimelineView extends BaseTasksView {
             const fileIncludeFilter = this.userOptionModel.get("includePaths") || [];
             const fileIncludeTagsFilter = this.userOptionModel.get("fileIncludeTags") || [];
             const fileExcludeTagsFilter = this.userOptionModel.get("fileExcludeTags") || [];
+            const dailyNoteFolder = this.userOptionModel.get("dailyNoteFolder") || '';
+            const dailyNoteFormat = this.userOptionModel.get("dailyNoteFormat") || '';
+            const dailyNotePeriod = this.userOptionModel.get("dailyNotePeriod") || 0;
 
-            await adapter.generateTasksList(fileIncludeFilter, fileExcludeFilter, fileIncludeTagsFilter, fileExcludeTagsFilter);
+            await adapter.generateTasksList(
+                fileIncludeFilter, fileExcludeFilter,
+                fileIncludeTagsFilter, fileExcludeTagsFilter,
+                dailyNoteFolder, dailyNoteFormat, dailyNotePeriod
+            );
 
             // Parse STF files that may bypass include/exclude path filters
             await this.parseAdditionalSTFFiles();

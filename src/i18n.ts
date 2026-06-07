@@ -30,6 +30,13 @@ export interface Translations {
     dailyNoteFolderDesc: string;
     dailyNoteFormat: string;
     dailyNoteFormatDesc: string;
+    dailyNotePeriod: string;
+    dailyNotePeriodDesc: string;
+    dailyNotePeriodUnlimited: string;
+    dailyNotePeriod30: string;
+    dailyNotePeriod90: string;
+    dailyNotePeriod180: string;
+    dailyNotePeriod360: string;
     enableYearHeader: string;
     enableYearHeaderDesc: string;
     hideStatusTasks: string;
@@ -232,6 +239,13 @@ const en: Translations = {
     dailyNoteFolderDesc: "Specify the folder where the daily notes are saved.",
     dailyNoteFormat: "Daily Note Format",
     dailyNoteFormatDesc: "Daily note file format. The format should be of moment format, see <a href=https://momentjs.com/docs/#/displaying/format/>docs of moment.js</a> for more details.",
+    dailyNotePeriod: "Daily Note Period",
+    dailyNotePeriodDesc: "Only load daily notes within this period. Older daily notes will be skipped to improve performance.",
+    dailyNotePeriodUnlimited: "Unlimited",
+    dailyNotePeriod30: "30 days",
+    dailyNotePeriod90: "90 days",
+    dailyNotePeriod180: "180 days",
+    dailyNotePeriod360: "360 days",
     enableYearHeader: "Enable Year Header",
     enableYearHeaderDesc: "Display the year on top of tasks of that year or not.",
     hideStatusTasks: "Hide tasks of specific status.",
@@ -421,6 +435,13 @@ const zh: Translations = {
     dailyNoteFolderDesc: "指定日记文件保存的文件夹。",
     dailyNoteFormat: "日记格式",
     dailyNoteFormatDesc: "日记文件格式。格式应为 moment.js 格式，详见 <a href=https://momentjs.com/docs/#/displaying/format/>moment.js 文档</a>。",
+    dailyNotePeriod: "有效日记期限",
+    dailyNotePeriodDesc: "仅加载该期限内的日记文件。超过期限的旧日记将被跳过，以提升性能。",
+    dailyNotePeriodUnlimited: "无限期",
+    dailyNotePeriod30: "30天",
+    dailyNotePeriod90: "90天",
+    dailyNotePeriod180: "180天",
+    dailyNotePeriod360: "360天",
     enableYearHeader: "显示年份标题",
     enableYearHeaderDesc: "是否在每年任务顶部显示年份。",
     hideStatusTasks: "隐藏特定状态的任务",
