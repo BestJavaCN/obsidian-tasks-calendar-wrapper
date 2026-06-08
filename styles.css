@@ -7,9 +7,11 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-/* Always show scrollbar to prevent layout shift when switching between panels */
+/* Reserve scrollbar gutter on both edges to keep content perfectly centered
+   and prevent layout shift when switching between panels */
 .workspace-leaf-content[data-type="tasks_timeline_view"] > .view-content {
-	overflow-y: scroll;
+	overflow-y: auto;
+	scrollbar-gutter: stable both-edges;
 }
 
 .taskido {
