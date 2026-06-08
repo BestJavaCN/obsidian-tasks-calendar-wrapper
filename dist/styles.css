@@ -66,10 +66,9 @@ If your plugin does not need CSS, delete this file.
 .taskido .counters {
 	display: flex;
 	flex-direction: row;
-	flex-wrap: nowrap;
-	justify-content: center;
-	align-content: center;
-	margin: 20px 0;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 10px 0;
 }
 
 .taskido .counter {
@@ -81,9 +80,8 @@ If your plugin does not need CSS, delete this file.
 	padding: 5px;
 	text-align: center;
 	flex: 1 1 0;
-	margin: 0 5px;
-	min-width: 70px;
-	max-width: 150px;
+	min-width: calc((100% - 16px) / 3);
+	max-width: none;
 	overflow: hidden;
 	background: var(--interactive-normal);
 	box-shadow: var(--input-shadow);
