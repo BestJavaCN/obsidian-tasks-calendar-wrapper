@@ -1,6 +1,6 @@
 import { Model } from 'backbone';
 import moment from 'moment';
-import { App, ItemView, Modal, Notice, Pos } from 'obsidian';
+import { App, ItemView, MarkdownView, Modal, Notice, Pos, TFile, WorkspaceLeaf } from 'obsidian';
 import * as React from 'react';
 import { UserOption, defaultUserOptions } from '../../src/settings';
 import { t, Language, formatNoSuchFile, formatErrorOpeningFile, formatSomethingWentWrong, formatTemplateFileNotFound, formatErrorCreatingFileTemplater, formatErrorCreatingFile, formatErrorWritingTask, formatErrorReadingFile } from '../../src/i18n';
@@ -226,7 +226,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
 
                                 await this.addTaskToFile(path, section, taskStr);
 
-                                this.app.workspace.openLinkText('', path);
+                                this.openFileInLeaf(path);
 
                             } catch (reason) {
                                 new Notice(formatErrorCreatingFileTemplater(lang, reason), 5000);
@@ -236,7 +236,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                             this.app.vault.create(path, content)
                                 .then(() => {
                                     this.onUpdateTasks();
-                                    this.app.workspace.openLinkText('', path);
+                                    this.openFileInLeaf(path);
                                 })
                                 .catch(reason => {
                                     return new Notice(formatErrorCreatingFile(lang, path, reason), 5000);
@@ -254,7 +254,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                 this.app.vault.adapter.write(path, lines.join("\n"))
                     .then(() => {
                         this.onUpdateTasks();
-                        this.app.workspace.openLinkText('', path);
+                        this.openFileInLeaf(path);
                     })
                     .catch(reason => {
                         return new Notice(formatErrorWritingTask(lang, path, reason), 5000);
@@ -271,6 +271,33 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
         search.openGlobalSearch('tag:' + tag)
     }
 
+    /**
+     * Open a file in the workspace:
+     * - If the file is already open in an existing leaf, navigate to that leaf.
+     * - Otherwise, open it in a new tab.
+     */
+    private async openFileInLeaf(path: string): Promise<void> {
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) return;
+
+        // Check if the file is already open in any existing leaf
+        let existingLeaf: WorkspaceLeaf | null = null;
+        this.app.workspace.iterateAllLeaves(leaf => {
+            const mdView = leaf.view;
+            if (mdView instanceof MarkdownView && mdView.file?.path === file.path) {
+                existingLeaf = leaf;
+            }
+        });
+
+        if (existingLeaf) {
+            // File is already open, navigate to that leaf
+            this.app.workspace.revealLeaf(existingLeaf);
+        } else {
+            // File is not open, open in a new tab
+            await this.app.workspace.getLeaf('tab').openFile(file, { state: { mode: "source" } });
+        }
+    }
+
     handleOpenFile(path: string, position: Pos, openTaskEdit = false) {
         const lang = this.state.userOptions.language;
         this.app.vault.adapter.exists(path).then(exist => {
@@ -278,10 +305,8 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
                 new Notice(formatNoSuchFile(lang, path), 5000);
                 return;
             }
-            this.app.workspace.openLinkText('', path).then(() => {
+            this.openFileInLeaf(path).then(() => {
                 try {
-                    const file = this.app.workspace.getActiveFile();
-                    file && this.app.workspace.getLeaf().openFile(file, { state: { mode: "source" } });
                     this.app.workspace.activeEditor?.editor?.setSelection(
                         { line: position.start.line, ch: position.start.col },
                         { line: position.start.line, ch: position.end.col }
@@ -312,9 +337,7 @@ export class ObsidianBridge extends React.Component<ObsidianBridgeProps, Obsidia
     }
 
     handleCompleteTask(path: string, position: Pos) {
-        this.app.workspace.openLinkText('', path).then(() => {
-            const file = this.app.workspace.getActiveFile();
-            this.app.workspace.getLeaf().openFile(file!, { state: { mode: "source" } });
+        this.openFileInLeaf(path).then(() => {
             this.app.workspace.activeEditor?.editor?.setSelection(
                 { line: position.start.line, ch: position.start.col },
                 { line: position.end.line, ch: position.end.col }
