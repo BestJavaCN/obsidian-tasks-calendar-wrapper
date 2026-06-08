@@ -7,11 +7,27 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-/* Reserve scrollbar gutter on both edges to keep content perfectly centered
-   and prevent layout shift when switching between panels */
+/* Prevent layout shift when switching between panels.
+   Uses thin overlay scrollbar to minimize visual impact. */
 .workspace-leaf-content[data-type="tasks_timeline_view"] > .view-content {
 	overflow-y: auto;
 	scrollbar-gutter: stable both-edges;
+	scrollbar-width: thin;
+	padding: 0 2px;
+	margin: 10px 0 20px 0;
+}
+
+.workspace-leaf-content[data-type="tasks_timeline_view"] > .view-content::-webkit-scrollbar {
+	width: 6px;
+}
+
+.workspace-leaf-content[data-type="tasks_timeline_view"] > .view-content::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.workspace-leaf-content[data-type="tasks_timeline_view"] > .view-content::-webkit-scrollbar-thumb {
+	background-color: var(--scrollbar-thumb-bg);
+	border-radius: 3px;
 }
 
 .taskido {
